@@ -52,3 +52,6 @@ app.*.map.json
 
 # Gradle 构建产物（android 子目录自己的 build）
 /android/build/
+
+# 临时下载文件
+pm.tar.gz
