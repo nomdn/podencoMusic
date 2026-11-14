@@ -1,5 +1,7 @@
 # Podenco Music
 
+![Podenco Music](docs/hero.png)
+
 塞壬唱片（[monster-siren.hypergryph.com](https://monster-siren.hypergryph.com/music)）的非官方客户端，
 Flutter 写的，一套代码跑 Windows / Android。
 
