@@ -20,6 +20,11 @@
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="A new Flutter project.">
 
+  <!-- hycdn OSS 开了 Referer 防盗链：外部 Referer 一律 403，空 Referer 放行。
+       原生端不发 Referer 所以一直没事；Web 端在这里全局禁掉 Referer，
+       否则封面 / 音频 / 歌词全会被防盗链拦下。 -->
+  <meta name="referrer" content="no-referrer">
+
   <!--
     Uncomment the tag below to lay the app out underneath the parts of the
     screen that the device obstructs, such as a display cutout, the rounded
@@ -35,13 +40,13 @@
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="podenco_music">
+  <meta name="apple-mobile-web-app-title" content="Podenco Music">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>podenco_music</title>
+  <title>Podenco Music</title>
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
