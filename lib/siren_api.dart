@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 
 import 'models.dart';
@@ -19,9 +20,16 @@ class SirenException implements Exception {
 /// 全部是 GET，不需要鉴权、不需要 cookie。用一组静态方法，
 /// 没有实例状态 —— 只有一个单曲详情的内存缓存。
 class SirenApi {
-  /// 官方接口主机。塞壬没有官方镜像 —— 第三方反代与官方 API 同路径
-  /// 同定义、只转发流量，用途是 Web 端绕 CORS / 自建镜像（在设置页配置）。
-  static const String defaultHost = 'https://monster-siren.hypergryph.com/api';
+  /// 官方接口主机（桌面端默认）。塞壬没有官方镜像。
+  static const String officialHost = 'https://monster-siren.hypergryph.com/api';
+
+  /// Web 端默认反代：官方 API 域名有 CORS 限制，Web 构建默认走
+  /// Cloudflare Workers 自建反代（同路径转发 + CORS 头）。
+  static const String webProxyHost = 'https://podenco-music.api.wsmdn.top/api';
+
+  /// 当前平台的默认接口主机：桌面直连官方（原生请求无 CORS），
+  /// Web 默认走反代。可在设置页覆盖。
+  static String get defaultHost => kIsWeb ? webProxyHost : officialHost;
 
   /// 当前接口主机（含 /api 路径段）。可在设置页改为自建反代地址；
   /// 封面、音频、歌词在鹰角 OSS 上（无 CORS 限制），始终直连不走代理。

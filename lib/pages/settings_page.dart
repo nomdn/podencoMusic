@@ -60,9 +60,9 @@ class _SettingsPageState extends State<SettingsPage> {
           Text('接口代理', style: theme.textTheme.titleMedium),
           const SizedBox(height: 4),
           Text(
-            '塞壬 API 域名有 CORS 限制：Web 端需要自建一个与官方接口同路径、'
-            '只转发流量的反代服务，把反代地址填在这里。桌面 / 安卓原生请求'
-            '没有这个限制，留空即可。',
+            '塞壬 API 域名有 CORS 限制：Web 端默认走自建反代（已内置地址），'
+            '留空即用；桌面 / 安卓原生请求没有这个限制，默认直连官方。'
+            '填入其他地址可覆盖默认。封面、音频、歌词始终直连 OSS，不走代理。',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
               height: 1.5,
