@@ -102,33 +102,6 @@ class _HomePageState extends State<HomePage> {
         title: const Text('Podenco Music'),
         titleSpacing: 20,
         actions: [
-          PopupMenuButton<bool>(
-            onSelected: (value) => unawaited(_setSortByName(value)),
-            icon: const Icon(Icons.sort),
-            tooltip: '排序方式',
-            itemBuilder: (context) => [
-              CheckedPopupMenuItem(
-                value: false,
-                checked: !_sortByName,
-                child: const Text('默认顺序'),
-              ),
-              CheckedPopupMenuItem(
-                value: true,
-                checked: _sortByName,
-                child: const Text('按名称'),
-              ),
-            ],
-          ),
-          IconButton(
-            onPressed: _openHistory,
-            icon: const Icon(Icons.history),
-            tooltip: '播放历史',
-          ),
-          IconButton(
-            onPressed: _openDownloads,
-            icon: const Icon(Icons.download),
-            tooltip: '下载管理',
-          ),
           IconButton(
             onPressed: _openPlaylists,
             icon: const Icon(Icons.library_music),
@@ -139,10 +112,54 @@ class _HomePageState extends State<HomePage> {
             icon: const Icon(Icons.search),
             tooltip: '搜索',
           ),
-          IconButton(
-            onPressed: _openSettings,
-            icon: const Icon(Icons.settings),
-            tooltip: '设置',
+          PopupMenuButton<String>(
+            tooltip: '更多',
+            icon: const Icon(Icons.more_vert),
+            onSelected: (value) => switch (value) {
+              'sort-default' => unawaited(_setSortByName(false)),
+              'sort-name' => unawaited(_setSortByName(true)),
+              'history' => _openHistory(),
+              'downloads' => _openDownloads(),
+              'settings' => _openSettings(),
+              _ => null,
+            },
+            itemBuilder: (context) => [
+              CheckedPopupMenuItem(
+                value: 'sort-default',
+                checked: !_sortByName,
+                child: const Text('默认顺序'),
+              ),
+              CheckedPopupMenuItem(
+                value: 'sort-name',
+                checked: _sortByName,
+                child: const Text('按名称'),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: 'history',
+                child: Row(children: [
+                  Icon(Icons.history, size: 20),
+                  SizedBox(width: 12),
+                  Text('播放历史'),
+                ]),
+              ),
+              const PopupMenuItem(
+                value: 'downloads',
+                child: Row(children: [
+                  Icon(Icons.download, size: 20),
+                  SizedBox(width: 12),
+                  Text('下载管理'),
+                ]),
+              ),
+              const PopupMenuItem(
+                value: 'settings',
+                child: Row(children: [
+                  Icon(Icons.settings, size: 20),
+                  SizedBox(width: 12),
+                  Text('设置'),
+                ]),
+              ),
+            ],
           ),
           const SizedBox(width: 8),
         ],
