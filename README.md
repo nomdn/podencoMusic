@@ -2,8 +2,14 @@
 
 ![Podenco Music](docs/hero.png)
 
-塞壬唱片（[monster-siren.hypergryph.com](https://monster-siren.hypergryph.com/music)）的非官方客户端，
-Flutter 写的，一套代码跑 Windows / Android。
+塞壬唱片（[monster-siren.hypergryph.com](https://monster-siren.hypergryph.com/music)）的非官方客户端
+
+## 致谢
+塞壬唱片-MSR
+
+## 免责声明
+本工具仅用于学习与技术交流，所有音乐版权均归原作者及相关版权方所有，任何下载内容不得用于商业用途  
+本工具音乐版权归属于 **上海鹰角网络科技有限公司**
 
 ## 命令
 
