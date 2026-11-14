@@ -98,10 +98,57 @@ jobs:
             podencoMusic-web.zip
           if-no-files-found: error
 
+  # Web 版部署到腾讯云 EdgeOne Pages（官方 CLI：npx edgeone pages deploy）
+  # 需要仓库 Secret：EDGEONE_API_TOKEN（EdgeOne Pages 控制台创建）
+  deploy-eo-pages:
+    name: Deploy Web to EdgeOne Pages
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.11.0'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: podencoMusic-web
+          path: web-dist
+
+      - name: 解压 Web 产物
+        run: unzip web-dist/podencoMusic-web.zip -d web-dist
+
+      - name: 部署到 EdgeOne Pages
+        run: npx edgeone pages deploy ./web-dist -n podenco-music -t ${{ secrets.EDGEONE_API_TOKEN }}
+
   release:
     # 只有 tag 推送才发 Release；手动触发只构建（产物在 Actions 页下载）
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
+
+  # Web 版部署到 GitHub Pages：构建产物为纯静态文件，官方 Action 直接托管
+  deploy-pages:
+    name: Deploy Web to GitHub Pages
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: podencoMusic-web
+          path: web-dist
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web-dist
+
+      - uses: actions/deploy-pages@v4
     runs-on: ubuntu-latest
     permissions:
       contents: write
