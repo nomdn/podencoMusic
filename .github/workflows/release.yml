@@ -1,0 +1,97 @@
+name: release
+
+# 打 v* 标签 → 双平台构建 + 发布 Release；
+# 手动触发（Actions 页 / workflow_dispatch）→ 只构建不出 Release。
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: android
+          - os: windows-latest
+            target: windows
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      # Android 构建要 JDK 17；Windows 装一份无害
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # 版本钉死：pubspec 要求 Dart ^3.14（Flutter 3.50+）
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.50.0'
+          cache: true
+
+      - name: 拉依赖
+        run: flutter pub get
+
+      - name: 静态检查
+        run: flutter analyze
+
+      - name: 单元测试
+        run: flutter test
+
+      - name: 构建 Android APK
+        if: matrix.target == 'android'
+        run: |
+          flutter build apk --release
+          mv build/app/outputs/flutter-apk/app-release.apk podencoMusic-android.apk
+
+      - name: 构建 Windows
+        if: matrix.target == 'windows'
+        run: flutter build windows --release
+
+      # Release 目录整体打包：exe + dll + data 一个都不能少
+      - name: 打包 Windows 产物
+        if: matrix.target == 'windows'
+        shell: pwsh
+        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath podencoMusic-windows.zip -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: podencoMusic-${{ matrix.target }}
+          path: |
+            podencoMusic-android.apk
+            podencoMusic-windows.zip
+          if-no-files-found: error
+
+  release:
+    # 只有 tag 推送才发 Release；手动触发只构建（产物在 Actions 页下载）
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: podencoMusic-android
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: podencoMusic-windows
+          path: dist
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

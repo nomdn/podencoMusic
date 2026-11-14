@@ -1,3 +1,5 @@
+// CLI 诊断工具：直接 print 输出是它的正当用途
+// ignore_for_file: avoid_print
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
