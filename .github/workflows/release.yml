@@ -24,6 +24,8 @@ jobs:
           - os: ubuntu-latest
             target: linux-x64
             arch: x64
+          - os: ubuntu-latest
+            target: web
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -78,6 +80,14 @@ jobs:
           flutter build linux --release
           tar -czf podencoMusic-${{ matrix.target }}.tar.gz -C build/linux/${{ matrix.arch }}/release/bundle .
 
+      # Web 产物是纯静态文件，任何静态托管解压即用
+      - name: 构建 Web 并打包
+        if: matrix.target == 'web'
+        run: |
+          flutter build web --release
+          cd build/web
+          zip -qr ../../..//podencoMusic-web.zip .
+
       - uses: actions/upload-artifact@v4
         with:
           name: podencoMusic-${{ matrix.target }}
@@ -85,6 +95,7 @@ jobs:
             podencoMusic-android.apk
             podencoMusic-windows.zip
             podencoMusic-linux-x64.tar.gz
+            podencoMusic-web.zip
           if-no-files-found: error
 
   release:
@@ -108,6 +119,11 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: podencoMusic-linux-x64
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: podencoMusic-web
           path: dist
 
 
