@@ -48,7 +48,9 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _reload() {
-    setState(() => _request = library.ensureAlbums());
+    setState(() {
+      _request = library.ensureAlbums();
+    });
   }
 
   void _openSearch() {

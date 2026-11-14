@@ -34,7 +34,9 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   void _retry() {
-    setState(() => _ready = _prepare());
+    setState(() {
+      _ready = _prepare();
+    });
   }
 
   @override

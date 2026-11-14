@@ -29,7 +29,9 @@ class _AlbumPageState extends State<AlbumPage> {
   late Future<AlbumDetail> _request = SirenApi.albumDetail(widget.album.cid);
 
   void _reload() {
-    setState(() => _request = SirenApi.albumDetail(widget.album.cid));
+    setState(() {
+      _request = SirenApi.albumDetail(widget.album.cid);
+    });
   }
 
   @override
