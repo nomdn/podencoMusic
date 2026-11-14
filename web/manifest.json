@@ -1,11 +1,11 @@
 {
-    "name": "podenco_music",
-    "short_name": "podenco_music",
+    "name": "Podenco Music",
+    "short_name": "Podenco",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#FDFAF4",
+    "theme_color": "#E8B33C",
+    "description": "塞壬唱片非官方客户端",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
