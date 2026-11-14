@@ -3,8 +3,6 @@
 塞壬唱片（[monster-siren.hypergryph.com](https://monster-siren.hypergryph.com/music)）的非官方客户端，
 Flutter 写的，一套代码跑 Windows / Android。
 
-界面全部用 Material 3 默认组件，没有自定义配色和圆角 —— 只给了一颗琥珀色种子色。
-
 ## 命令
 
 ```bash
