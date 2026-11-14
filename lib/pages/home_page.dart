@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:material_ui/material_ui.dart';
 
 import '../library.dart';
@@ -143,14 +144,15 @@ class _HomePageState extends State<HomePage> {
                   Text('播放历史'),
                 ]),
               ),
-              const PopupMenuItem(
-                value: 'downloads',
-                child: Row(children: [
-                  Icon(Icons.download, size: 20),
-                  SizedBox(width: 12),
-                  Text('下载管理'),
-                ]),
-              ),
+              if (!kIsWeb)
+                const PopupMenuItem(
+                  value: 'downloads',
+                  child: Row(children: [
+                    Icon(Icons.download, size: 20),
+                    SizedBox(width: 12),
+                    Text('下载管理'),
+                  ]),
+                ),
               const PopupMenuItem(
                 value: 'settings',
                 child: Row(children: [

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -120,6 +121,7 @@ class Downloader extends ChangeNotifier {
   /// 启动时把已有的下载记录恢复出来。
   /// Android 查 MediaStore，桌面直接扫目录 —— 都不需要请求网络。
   Future<void> scanExisting() async {
+    if (kIsWeb) return;
     try {
       if (MusicStore.isSupported) {
         final names = await MusicStore.list();
@@ -170,6 +172,13 @@ class Downloader extends ChangeNotifier {
 
   /// 把一批歌排进队列，串行逐首下。返回结果给 UI 弹提示用。
   Future<QueueResult> queueAll(List<Track> tracks) async {
+    if (kIsWeb) {
+      return QueueResult(
+        added: 0,
+        skipped: tracks.length,
+        blockedReason: 'Web 端暂不支持下载',
+      );
+    }
     final fresh = pickNew(tracks);
 
     if (fresh.isNotEmpty) {
@@ -194,6 +203,7 @@ class Downloader extends ChangeNotifier {
 
   /// 下载一首歌，返回最终位置的路径 / URI；失败返回 null。
   Future<String?> download(Track track) async {
+    if (kIsWeb) return null;
     final existing = _states[track.cid];
     // 进行中或已排队都拒绝重入 —— 排队中的歌在管理页取消后再点即可
     if (existing != null && (existing.isRunning || existing.isQueued)) {
@@ -335,6 +345,7 @@ class Downloader extends ChangeNotifier {
   /// 在系统文件管理器里打开下载目录。安卓用 DocumentsUI 打开
   /// Music/PodencoMusic；打不开返回 false。
   Future<bool> openFolder() async {
+    if (kIsWeb) return false;
     if (MusicStore.isSupported) return MusicStore.openFolder();
     if (!(Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
       return false;

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:material_ui/material_ui.dart';
 
 import '../downloader.dart';
@@ -229,11 +230,13 @@ class _Header extends StatelessWidget {
                           icon: const Icon(Icons.playlist_add),
                           label: const Text('加入歌单'),
                         ),
-                        OutlinedButton.icon(
-                          onPressed: () => _downloadAll(context, detail.songs),
-                          icon: const Icon(Icons.download),
-                          label: const Text('下载全部'),
-                        ),
+                        // Web 端没有文件下载能力，按钮整体隐藏
+                        if (!kIsWeb)
+                          OutlinedButton.icon(
+                            onPressed: () => _downloadAll(context, detail.songs),
+                            icon: const Icon(Icons.download),
+                            label: const Text('下载全部'),
+                          ),
                       ],
                     ),
                   ],

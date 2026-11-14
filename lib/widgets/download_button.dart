@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:material_ui/material_ui.dart';
 
 import '../downloader.dart';
@@ -15,13 +16,16 @@ class DownloadButton extends StatelessWidget {
 
   bool get _canOpenFolder =>
       MusicStore.isSupported ||
-      Platform.isWindows ||
+      (!kIsWeb && Platform.isWindows) ||
       Platform.isMacOS ||
       Platform.isLinux;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+
+    // Web 端没有文件下载能力（原生下载走 dart:io），整体隐藏
+    if (kIsWeb) return const SizedBox.shrink();
 
     return ListenableBuilder(
       listenable: downloader,

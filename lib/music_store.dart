@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 
 /// Android 系统 Music 目录的读写，走原生 MethodChannel。
@@ -11,7 +12,7 @@ import 'package:flutter/services.dart';
 class MusicStore {
   static const _channel = MethodChannel('com.mint.podencomusic/storage');
 
-  static bool get isSupported => Platform.isAndroid;
+  static bool get isSupported => !kIsWeb && Platform.isAndroid;
 
   /// 把临时文件存进系统 Music/PodencoMusic 目录。
   ///

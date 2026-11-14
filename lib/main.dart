@@ -24,9 +24,10 @@ import 'playlist_model.dart';
 import 'siren_api.dart';
 import 'storage.dart';
 /// 托盘与窗口管理相关的桌面开关。window_manager / system_tray 都没有
-/// 移动端实现，Android/iOS 上整套逻辑必须跳过。
+/// 移动端实现，Android/iOS/Web 上整套逻辑必须跳过。
+/// kIsWeb 短路在前面：Web 上 dart:io 的 Platform 桩一碰就抛。
 final bool _isDesktop =
-    Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+    !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
 
 
 Future<void> main() async {
@@ -47,7 +48,7 @@ Future<void> main() async {
   unawaited(downloader.scanExisting());
 
   _registerDebugExtensions();
-  _registerDebugFileHooks();
+  if (!kIsWeb) _registerDebugFileHooks();
 
   // 托盘/关窗隐藏是桌面功能：window_manager 没有移动端实现，
   // 在 Android/iOS 上调用会抛 MissingPluginException。移动端
