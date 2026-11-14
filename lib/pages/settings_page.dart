@@ -31,12 +31,20 @@ class _SettingsPageState extends State<SettingsPage> {
       );
       return;
     }
-    await ApiConfigStorage.save(v);
-    SirenApi.host = v;
+
+    // 契约：反代与官方 API 同路径（含 /api 前缀）—— 只填根地址时自动补上，
+    // 避免「配了代理但请求 404」的坑
+    var host = v;
+    if (host.isNotEmpty && !host.endsWith('/api')) {
+      host = host.endsWith('/') ? '${host.substring(0, host.length - 1)}/api' : '$host/api';
+    }
+
+    await ApiConfigStorage.save(host);
+    SirenApi.host = host;
     if (!mounted) return;
-    setState(() => _usingCustom = v.isNotEmpty);
+    setState(() => _usingCustom = host.isNotEmpty);
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(v.isEmpty ? '已恢复官方接口' : '已保存，接口走：$v')),
+      SnackBar(content: Text(host.isEmpty ? '已恢复官方接口' : '已保存，接口走：$host')),
     );
   }
 
@@ -64,8 +72,8 @@ class _SettingsPageState extends State<SettingsPage> {
           TextField(
             controller: _controller,
             decoration: InputDecoration(
-              labelText: '接口代理地址',
-              hintText: '留空使用官方接口（${SirenApi.defaultHost}）',
+              labelText: '接口代理地址（根地址，自动补 /api）',
+              hintText: '留空使用官方接口',
               border: const OutlineInputBorder(),
               isDense: true,
             ),
