@@ -5,6 +5,38 @@ Flutter 写的，一套代码跑 Windows / Android。
 
 界面全部用 Material 3 默认组件，没有自定义配色和圆角 —— 只给了一颗琥珀色种子色。
 
+## 波登可场景图提示词
+
+应用以明日方舟干员「波登可」（Podenco）命名。下面是给图像生成工具的提示词，
+用于画她在温室花房的场景图 —— **不含角色外观描述**，人设以自己提供的参考图
+为准（走图生图 / 角色参考工作流，如 IP-Adapter、reference 图）。
+
+**提示词（中文）：**
+
+> 明日方舟角色「波登可」（Podenco）在玻璃温室花房的清晨场景：阳光穿过顶棚
+> 玻璃洒下丁达尔光束，四周环绕盛开的白色与橙色小花、悬垂的干花束和木质花架；
+> 她侧身站在花丛间，双手轻捧一只冒着淡淡蒸汽的香薰玻璃瓶，几片花瓣与花粉
+> 光点漂浮在空气中；暖金色晨光与植物绿的冷暖对比，中景构图，浅景深，柔和
+> 光晕与通透的空气感；明日方舟官方插画风格，干净的线条，柔和的厚涂上色，
+> 高质量，细节丰富。
+
+**Prompt（English）：**
+
+> Arknights operator "Podenco" in a glass greenhouse flower house at early
+> morning: sunlight pours through the glass roof as volumetric god rays,
+> surrounded by blooming white and orange flowers, hanging dried bouquets and
+> wooden flower racks; she stands among the flowers, gently holding a small
+> aromatherapy glass bottle with faint steam rising, petals and glowing pollen
+> dust drifting in the air; warm golden morning light against cool plant
+> greens, medium shot, shallow depth of field, soft glow and airy atmosphere;
+> official Arknights illustration style, clean linework, soft painterly
+> shading, high quality, highly detailed.
+
+**Negative（可选）：**
+
+> photorealistic, photograph, text, watermark, signature, extra characters,
+> lowres, jpeg artifacts, cluttered background
+
 ## 跑起来
 
 ```bash
