@@ -44,7 +44,7 @@ jobs:
 
       - name: Linux 构建依赖（GTK3 / ninja）
         if: matrix.target == 'linux'
-        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev ninja-build pkg-config libayatana-appindicator3-dev
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev ninja-build pkg-config libayatana-appindicator3-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
 
       - name: 拉依赖
         run: flutter pub get
