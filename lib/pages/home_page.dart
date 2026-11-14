@@ -13,6 +13,7 @@ import 'downloads_page.dart';
 import 'history_page.dart';
 import 'playlists_page.dart';
 import 'search_page.dart';
+import 'settings_page.dart';
 
 /// 首页：全部专辑的网格。
 ///
@@ -52,6 +53,12 @@ class _HomePageState extends State<HomePage> {
   void _openSearch() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => const SearchPage()),
+    );
+  }
+
+  void _openSettings() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const SettingsPage()),
     );
   }
 
@@ -131,6 +138,11 @@ class _HomePageState extends State<HomePage> {
             onPressed: _openSearch,
             icon: const Icon(Icons.search),
             tooltip: '搜索',
+          ),
+          IconButton(
+            onPressed: _openSettings,
+            icon: const Icon(Icons.settings),
+            tooltip: '设置',
           ),
           const SizedBox(width: 8),
         ],

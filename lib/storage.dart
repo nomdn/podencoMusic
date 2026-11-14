@@ -160,6 +160,34 @@ class HistoryStorage {
   }
 }
 
+/// 接口代理地址（可选）。空串 = 使用官方接口。
+///
+/// 用途：塞壬 API 域名有 CORS 限制，Web 端需要自建反代（与官方 API
+/// 同路径同定义、只转发流量），这里存反代的地址；桌面/安卓原生请求
+/// 没有 CORS 概念，一般留空。封面、音频、歌词在鹰角 OSS 上
+/// （响应带 CORS 允许头），直连即可，不走代理。
+class ApiConfigStorage {
+  static const _key = 'api_base_url';
+
+  static Future<String> load() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_key) ?? '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  static Future<void> save(String url) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_key, url.trim());
+    } catch (_) {
+      // 写失败只影响下次启动的记忆
+    }
+  }
+}
+
 /// 首页专辑排序偏好。就一个开关，不值得为它建 ChangeNotifier。
 class UiStorage {
   static const _sortKey = 'albums_sort_by_name';

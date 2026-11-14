@@ -19,7 +19,25 @@ class SirenException implements Exception {
 /// 全部是 GET，不需要鉴权、不需要 cookie。用一组静态方法，
 /// 没有实例状态 —— 只有一个单曲详情的内存缓存。
 class SirenApi {
-  static const _host = 'https://monster-siren.hypergryph.com/api';
+  /// 官方接口主机。塞壬没有官方镜像 —— 第三方反代与官方 API 同路径
+  /// 同定义、只转发流量，用途是 Web 端绕 CORS / 自建镜像（在设置页配置）。
+  static const String defaultHost = 'https://monster-siren.hypergryph.com/api';
+
+  /// 当前接口主机（含 /api 路径段）。可在设置页改为自建反代地址；
+  /// 封面、音频、歌词在鹰角 OSS 上（无 CORS 限制），始终直连不走代理。
+  static String _host = defaultHost;
+
+  static String get host => _host;
+
+  static set host(String value) {
+    final v = value.trim();
+    if (v.isEmpty) {
+      _host = defaultHost;
+      return;
+    }
+    _host = v.endsWith('/') ? v.substring(0, v.length - 1) : v;
+  }
+
   static final _client = http.Client();
 
   /// 单曲详情缓存：cid → 详情。

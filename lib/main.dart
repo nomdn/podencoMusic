@@ -13,6 +13,7 @@ import 'package:system_tray/system_tray.dart';
 // 0.7 把经典的 windowManager 全局 API 挪进了 legacy 导出，托盘场景够用
 import 'package:window_manager/window_manager.dart';
 
+
 import 'downloader.dart';
 import 'library.dart';
 import 'models.dart';
@@ -21,6 +22,12 @@ import 'pages/home_page.dart';
 import 'player_model.dart';
 import 'playlist_model.dart';
 import 'siren_api.dart';
+import 'storage.dart';
+/// 托盘与窗口管理相关的桌面开关。window_manager / system_tray 都没有
+/// 移动端实现，Android/iOS 上整套逻辑必须跳过。
+final bool _isDesktop =
+    Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+
 
 Future<void> main() async {
   // 恢复播放状态要用 shared_preferences，那是平台通道，得先初始化绑定
@@ -33,20 +40,28 @@ Future<void> main() async {
   await playlistsModel.load();
   await historyModel.load();
 
+  // 接口代理地址（设置页可改）：在首次网络请求之前生效
+  SirenApi.host = await ApiConfigStorage.load();
+
   // 扫一遍下载目录，把已经下过的歌记下来。这个可以慢慢来，不阻塞启动。
   unawaited(downloader.scanExisting());
 
   _registerDebugExtensions();
   _registerDebugFileHooks();
 
-  // 托盘方案下的关窗行为：点 X 不退出，隐藏到托盘继续放歌；
-  // 真正的退出走托盘右键菜单的「退出」。
-  await windowManager.ensureInitialized();
-  windowManager.addListener(_windowCloseHandler);
-  await windowManager.setPreventClose(true);
+  // 托盘/关窗隐藏是桌面功能：window_manager 没有移动端实现，
+  // 在 Android/iOS 上调用会抛 MissingPluginException。移动端
+  // 也没有「窗口」概念，整套托盘逻辑只在桌面三平台启用。
+  if (_isDesktop) {
+    await windowManager.ensureInitialized();
+    windowManager.addListener(_windowCloseHandler);
+    await windowManager.setPreventClose(true);
+  }
 
   runApp(const PodencoApp());
-  unawaited(_initTray());
+  if (_isDesktop) {
+    unawaited(_initTray());
+  }
 }
 
 /// 托盘图标。音乐播放器的托盘价值就一条：窗口关了音乐还在放 ——

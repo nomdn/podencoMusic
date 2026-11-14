@@ -42,6 +42,11 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Impeller 的 GLES 后端在模拟器/部分旧 GPU 上渐变着色器链接失败
+             （uniform 超上限），回退 Skia 渲染 -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableImpeller"
+            android:value="false" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
