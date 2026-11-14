@@ -21,6 +21,8 @@ jobs:
             target: android
           - os: windows-latest
             target: windows
+          - os: ubuntu-latest
+            target: linux
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -39,6 +41,10 @@ jobs:
         with:
           flutter-version: '3.50.0'
           cache: true
+
+      - name: Linux 构建依赖（GTK3 / ninja）
+        if: matrix.target == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev ninja-build pkg-config
 
       - name: 拉依赖
         run: flutter pub get
@@ -65,12 +71,19 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath podencoMusic-windows.zip -Force
 
+      - name: 构建 Linux
+        if: matrix.target == 'linux'
+        run: |
+          flutter build linux --release
+          tar -czf podencoMusic-linux.tar.gz -C build/linux/x64/release/bundle .
+
       - uses: actions/upload-artifact@v4
         with:
           name: podencoMusic-${{ matrix.target }}
           path: |
             podencoMusic-android.apk
             podencoMusic-windows.zip
+            podencoMusic-linux.tar.gz
           if-no-files-found: error
 
   release:
@@ -89,6 +102,11 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: podencoMusic-windows
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: podencoMusic-linux
           path: dist
 
       - uses: softprops/action-gh-release@v2

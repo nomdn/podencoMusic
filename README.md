@@ -17,10 +17,11 @@
 # 桌面（改代码保存后按 r 热重载最快）
 flutter run -d windows
 
-# 安卓模拟器
-flutter emulators --launch Pixel_8
-flutter run
+# Linux（需要 GTK3 开发库）
+flutter run -d linux
 
 # 出安装包
 flutter build apk --release
+flutter build windows --release
+flutter build linux --release
 ```
