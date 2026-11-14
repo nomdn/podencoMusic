@@ -86,7 +86,7 @@ jobs:
         run: |
           flutter build web --release
           cd build/web
-          zip -qr ../../..//podencoMusic-web.zip .
+          zip -qr ../../podencoMusic-web.zip .
 
       - uses: actions/upload-artifact@v4
         with:
