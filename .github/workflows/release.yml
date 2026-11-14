@@ -24,9 +24,6 @@ jobs:
           - os: ubuntu-latest
             target: linux-x64
             arch: x64
-          - os: ubuntu-24.04-arm
-            target: linux-arm64
-            arch: arm64
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -88,7 +85,6 @@ jobs:
             podencoMusic-android.apk
             podencoMusic-windows.zip
             podencoMusic-linux-x64.tar.gz
-            podencoMusic-linux-arm64.tar.gz
           if-no-files-found: error
 
   release:
@@ -114,10 +110,7 @@ jobs:
           name: podencoMusic-linux-x64
           path: dist
 
-      - uses: actions/download-artifact@v4
-        with:
-          name: podencoMusic-linux-arm64
-          path: dist
+
 
       - uses: actions/download-artifact@v4
         with:
