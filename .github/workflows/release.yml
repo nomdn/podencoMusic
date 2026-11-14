@@ -22,7 +22,11 @@ jobs:
           - os: windows-latest
             target: windows
           - os: ubuntu-latest
-            target: linux
+            target: linux-x64
+            arch: x64
+          - os: ubuntu-24.04-arm
+            target: linux-arm64
+            arch: arm64
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -43,7 +47,7 @@ jobs:
           cache: true
 
       - name: Linux 构建依赖（GTK3 / ninja）
-        if: matrix.target == 'linux'
+        if: startsWith(matrix.target, 'linux')
         run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev ninja-build pkg-config libayatana-appindicator3-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
 
       - name: 拉依赖
@@ -72,10 +76,10 @@ jobs:
         run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath podencoMusic-windows.zip -Force
 
       - name: 构建 Linux
-        if: matrix.target == 'linux'
+        if: startsWith(matrix.target, 'linux')
         run: |
           flutter build linux --release
-          tar -czf podencoMusic-linux.tar.gz -C build/linux/x64/release/bundle .
+          tar -czf podencoMusic-${{ matrix.target }}.tar.gz -C build/linux/${{ matrix.arch }}/release/bundle .
 
       - uses: actions/upload-artifact@v4
         with:
@@ -83,7 +87,8 @@ jobs:
           path: |
             podencoMusic-android.apk
             podencoMusic-windows.zip
-            podencoMusic-linux.tar.gz
+            podencoMusic-linux-x64.tar.gz
+            podencoMusic-linux-arm64.tar.gz
           if-no-files-found: error
 
   release:
@@ -102,6 +107,16 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: podencoMusic-windows
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: podencoMusic-linux-x64
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: podencoMusic-linux-arm64
           path: dist
 
       - uses: actions/download-artifact@v4
