@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import '../library.dart';
 import '../models.dart';
 import '../storage.dart';
+import '../web_download.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/error_view.dart';
 import '../widgets/mini_player.dart';
@@ -146,7 +147,9 @@ class _HomePageState extends State<HomePage> {
                   Text('播放历史'),
                 ]),
               ),
-              if (!kIsWeb)
+              // Web 端只有支持 File System Access 的浏览器能下载，
+              // 其余浏览器没有下载能力，菜单项跟着隐藏
+              if (!kIsWeb || webFsSupported)
                 const PopupMenuItem(
                   value: 'downloads',
                   child: Row(children: [

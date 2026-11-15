@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import '../downloader.dart';
 import '../models.dart';
 import '../music_store.dart';
+import '../web_download.dart';
 
 /// 单曲下载按钮。四种状态：未下载 / 排队（时钟）/ 下载中（进度环）/ 已下载（对勾）。
 class DownloadButton extends StatelessWidget {
@@ -24,8 +25,9 @@ class DownloadButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
-    // Web 端没有文件下载能力（原生下载走 dart:io），整体隐藏
-    if (kIsWeb) return const SizedBox.shrink();
+    // Web：只有支持 File System Access 的浏览器（Chrome / Edge 系）才
+    // 显示下载按钮，其余浏览器没有文件下载能力，保持隐藏
+    if (kIsWeb && !webFsSupported) return const SizedBox.shrink();
 
     return ListenableBuilder(
       listenable: downloader,
@@ -95,9 +97,10 @@ class DownloadButton extends StatelessWidget {
   }
 
   void _toastSaved(ScaffoldMessengerState messenger, String path) {
-    // 安卓返回的是 content:// URI，直接甩给用户看不懂，换成说明性文案
-    final isContentUri = path.startsWith('content://');
-    final message = isContentUri
+    // Web 的「path」其实是落进授权目录的文件名，说法得跟着变
+    final message = kIsWeb
+        ? '已保存到授权的下载目录：$path'
+        : path.startsWith('content://')
         ? '已保存到系统音乐库 · Music/PodencoMusic'
         : '已保存：$path';
 

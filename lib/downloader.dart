@@ -14,6 +14,7 @@ import 'models.dart';
 import 'static_cache.dart';
 import 'music_store.dart';
 import 'siren_api.dart';
+import 'web_download.dart';
 
 /// 一首歌的下载状态。五个字段描述完整生命周期，别加中间态。
 enum DownloadStatus { idle, queued, running, done, failed }
@@ -81,6 +82,9 @@ class Downloader extends ChangeNotifier {
   /// 单曲直下和队列任务都会挂在这里，管理页按 cid 取消。
   final Map<String, http.Client> _activeClients = {};
 
+  /// Web 端下载的取消句柄（AbortController），与 _activeClients 同责。
+  final Map<String, WebDownloadHandle> _webHandles = {};
+
   /// 用户点了取消、但流还没抛错之前的标记
   final Set<String> _cancelRequested = {};
 
@@ -121,7 +125,18 @@ class Downloader extends ChangeNotifier {
   /// 启动时把已有的下载记录恢复出来。
   /// Android 查 MediaStore，桌面直接扫目录 —— 都不需要请求网络。
   Future<void> scanExisting() async {
-    if (kIsWeb) return;
+    if (kIsWeb) {
+      // 恢复上次授权的目录（只查权，绝不弹框），扫一遍文件名把
+      // 「已下载」标记恢复出来 —— 浏览器把权限收回了就当没下过
+      await webFs.querySavedAccess();
+      final names = await webFs.listSavedDirectory();
+      for (final name in names) {
+        final stem = _stemOfFileName(name);
+        if (stem != null) _downloadedStems.add(stem);
+      }
+      notifyListeners();
+      return;
+    }
     try {
       if (MusicStore.isSupported) {
         final names = await MusicStore.list();
@@ -173,11 +188,22 @@ class Downloader extends ChangeNotifier {
   /// 把一批歌排进队列，串行逐首下。返回结果给 UI 弹提示用。
   Future<QueueResult> queueAll(List<Track> tracks) async {
     if (kIsWeb) {
-      return QueueResult(
-        added: 0,
-        skipped: tracks.length,
-        blockedReason: 'Web 端暂不支持下载',
-      );
+      if (!webFsSupported) {
+        return QueueResult(
+          added: 0,
+          skipped: tracks.length,
+          blockedReason: '此浏览器不支持文件下载（需 Chrome / Edge）',
+        );
+      }
+      // 目录授权要趁用户手势还在（弹选择框 / 续权）：批量任务的第一首
+      // 下载隔着好几层 await，到那时手势早就过期了
+      if (!await webFs.ensureDirectoryAccess()) {
+        return QueueResult(
+          added: 0,
+          skipped: tracks.length,
+          blockedReason: '未选择 / 未授权下载目录',
+        );
+      }
     }
     final fresh = pickNew(tracks);
 
@@ -203,13 +229,36 @@ class Downloader extends ChangeNotifier {
 
   /// 下载一首歌，返回最终位置的路径 / URI；失败返回 null。
   Future<String?> download(Track track) async {
-    if (kIsWeb) return null;
     final existing = _states[track.cid];
     // 进行中或已排队都拒绝重入 —— 排队中的歌在管理页取消后再点即可
     if (existing != null && (existing.isRunning || existing.isQueued)) {
       return null;
     }
     _known[track.cid] = track;
+    // Web：目录授权必须趁用户手势还在（弹选择框 / 续权），赶在任何
+    // 网络请求之前做；被拒就按失败收尾，SnackBar 会给出原因
+    if (kIsWeb) {
+      if (!webFsSupported) {
+        _publish(
+          track.cid,
+          const DownloadState(
+            status: DownloadStatus.failed,
+            error: '此浏览器不支持文件下载（需 Chrome / Edge）',
+          ),
+        );
+        return null;
+      }
+      if (!await webFs.ensureDirectoryAccess()) {
+        _publish(
+          track.cid,
+          const DownloadState(
+            status: DownloadStatus.failed,
+            error: '未选择 / 未授权下载目录',
+          ),
+        );
+        return null;
+      }
+    }
     return _downloadNow(track);
   }
 
@@ -220,6 +269,12 @@ class Downloader extends ChangeNotifier {
     if (index >= 0) {
       _pending.removeAt(index);
       _publish(cid, const DownloadState());
+      return;
+    }
+    // Web 下载：掐断 fetch 的 AbortController，效果与掐流一致
+    if (_webHandles.containsKey(cid)) {
+      _cancelRequested.add(cid);
+      _webHandles[cid]!.abort();
       return;
     }
     // 单曲直下的任务不在队列里，看它有没有挂着的流客户端
@@ -287,28 +342,39 @@ class Downloader extends ChangeNotifier {
       final extension = _extensionOf(detail.sourceUrl);
       final fileName = '${_stemFor(track)}$extension';
 
-      // 元数据（歌名/艺人/专辑/封面）组装失败就给 null，下载照常进行
-      AudioTag? tag;
-      try {
-        tag = await _tagFor(track);
-      } catch (e) {
-        debugPrint('[download] 元数据组装失败：$e');
-      }
+      String location;
+      if (kIsWeb) {
+        // Web：fetch 流式读 + File System Access 流式写。没法嵌标签
+        //（ID3 / WAV 头重排需要整文件重写），先存纯净音频。
+        location = await _saveToWeb(
+          sourceUrl: detail.sourceUrl,
+          fileName: fileName,
+          cid: cid,
+        );
+      } else {
+        // 元数据（歌名/艺人/专辑/封面）组装失败就给 null，下载照常进行
+        AudioTag? tag;
+        try {
+          tag = await _tagFor(track);
+        } catch (e) {
+          debugPrint('[download] 元数据组装失败：$e');
+        }
 
-      final location = MusicStore.isSupported
-          ? await _saveToAndroidMusic(
-              sourceUrl: detail.sourceUrl,
-              fileName: fileName,
-              mimeType: _mimeOf(extension),
-              cid: cid,
-              tag: tag,
-            )
-          : await _saveToFolder(
-              sourceUrl: detail.sourceUrl,
-              fileName: fileName,
-              cid: cid,
-              tag: tag,
-            );
+        location = MusicStore.isSupported
+            ? await _saveToAndroidMusic(
+                sourceUrl: detail.sourceUrl,
+                fileName: fileName,
+                mimeType: _mimeOf(extension),
+                cid: cid,
+                tag: tag,
+              )
+            : await _saveToFolder(
+                sourceUrl: detail.sourceUrl,
+                fileName: fileName,
+                cid: cid,
+                tag: tag,
+              );
+      }
 
       _downloadedStems.add(_stemFor(track));
       _publish(
@@ -383,7 +449,29 @@ class Downloader extends ChangeNotifier {
     return dir;
   }
 
-  // ── 两个落盘实现 ─────────────────────────────────────────
+  // ── 三个落盘实现 ─────────────────────────────────────────
+
+  /// Web：fetch 流式读 + File System Access 流式写。目录权限已在
+  /// download() / queueAll() 的用户手势里确认过，这里只管写。
+  /// 取消走 AbortController（见 cancel），失败删半截文件（见实现）。
+  Future<String> _saveToWeb({
+    required String sourceUrl,
+    required String fileName,
+    required String cid,
+  }) async {
+    final handle = webFs.createDownloadHandle();
+    _webHandles[cid] = handle;
+    try {
+      return await webFs.writeFileFromUrl(
+        url: sourceUrl,
+        fileName: fileName,
+        handle: handle,
+        onProgress: (progress) => _publishProgress(cid, progress),
+      );
+    } finally {
+      _webHandles.remove(cid);
+    }
+  }
 
   /// Android：先下到缓存目录，再交给原生存进 MediaStore。
   ///

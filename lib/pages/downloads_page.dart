@@ -1,8 +1,10 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:material_ui/material_ui.dart';
 
 import '../downloader.dart';
 import '../library.dart';
 import '../models.dart';
+import '../web_download.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/mini_player.dart';
 
@@ -18,6 +20,25 @@ class DownloadsPage extends StatelessWidget {
       SnackBar(
         content: Text(ok ? '已交给系统打开' : '没有找到能打开文件夹的应用'),
       ),
+    );
+  }
+
+  /// Web：重选下载目录（File System Access）。
+  /// 目录换了之后重新扫一遍文件名，「已下载」标记按新目录重新识别。
+  Future<void> _pickWebDirectory(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await webFs.pickDirectory();
+    if (!context.mounted) return;
+    if (!ok) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('未选择目录')),
+      );
+      return;
+    }
+    await downloader.scanExisting();
+    if (!context.mounted) return;
+    messenger.showSnackBar(
+      const SnackBar(content: Text('已更新下载目录，「已下载」标记按新目录重新识别')),
     );
   }
 
@@ -39,11 +60,19 @@ class DownloadsPage extends StatelessWidget {
                       icon: const Icon(Icons.clear_all),
                       tooltip: '清空队列',
                     ),
-                  IconButton(
-                    onPressed: () => _openFolder(context),
-                    icon: const Icon(Icons.folder_open),
-                    tooltip: '打开文件夹',
-                  ),
+                  if (kIsWeb && webFsSupported)
+                    // Web：没有「文件夹」可开，给重选目录的入口
+                    IconButton(
+                      onPressed: () => _pickWebDirectory(context),
+                      icon: const Icon(Icons.create_new_folder),
+                      tooltip: '选择下载目录',
+                    )
+                  else
+                    IconButton(
+                      onPressed: () => _openFolder(context),
+                      icon: const Icon(Icons.folder_open),
+                      tooltip: '打开文件夹',
+                    ),
                 ],
               );
             },
