@@ -6,7 +6,8 @@
 支持LINUX WINDOWS ANDROID和WEB
 
 ## 致谢
-塞壬唱片-MSR
+塞壬唱片-MSR  
+[MomokaMusic](https://codeberg.org/heipiao233/MomokaMusic)
 
 ## 免责声明
 本工具仅用于学习与技术交流，所有音乐版权均归原作者及相关版权方所有，任何下载内容不得用于商业用途  
