@@ -8,15 +8,18 @@ import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.MediaScannerConnection
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.os.StatFs
 import android.provider.DocumentsContract
 import android.provider.MediaStore
-import io.flutter.embedding.android.FlutterActivity
+import android.provider.Settings
+import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import rikka.shizuku.Shizuku
 import java.io.File
 
 /**
@@ -28,8 +31,12 @@ import java.io.File
  *
  * 为什么不存 app 私有目录：那样系统音乐播放器里根本看不到，文件管理器也要翻好几层。
  * 用户要的是「下载完就能在系统里直接听」。
+ *
+ * 基类是 AudioServiceActivity（FlutterActivity 的子类）：audio_service
+ * 要靠它在引擎就绪前接管 MediaButton / 服务生命周期，播放时才能拉起
+ * 带媒体通知的前台服务。
  */
-class MainActivity : FlutterActivity() {
+class MainActivity : AudioServiceActivity() {
 
     private data class PendingSave(
         val sourcePath: String,
@@ -40,6 +47,9 @@ class MainActivity : FlutterActivity() {
 
     /** 等用户点完权限弹窗后要继续的保存任务 */
     private var pendingSave: PendingSave? = null
+
+    /** 等用户在 Shizuku 授权框点完后要回话的通道结果 */
+    private var pendingShizukuResult: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -52,9 +62,38 @@ class MainActivity : FlutterActivity() {
                     "hasPermission" -> result.success(hasStoragePermission())
                     "getFreeSpace" -> result.success(getFreeSpace())
                     "openMusicFolder" -> result.success(openMusicFolder())
+                    "ensureNotificationPermission" -> {
+                        ensureNotificationPermission()
+                        result.success(true)
+                    }
+                    "getVivoWhitelist" -> result.success(getVivoWhitelist())
+                    "setVivoWhitelist" -> {
+                        val json = call.argument<String>("json")
+                        if (json.isNullOrEmpty()) {
+                            result.error("bad_args", "json 不能为空", null)
+                        } else {
+                            result.success(setVivoWhitelist(json))
+                        }
+                    }
+                    "vivoWhitelistEnv" -> result.success(
+                        mapOf(
+                            "shizukuAlive" to shizukuAlive(),
+                            "shizukuGranted" to shizukuGranted(),
+                            "canWriteSettings" to Settings.System.canWrite(this),
+                        ),
+                    )
+                    "vivoShizukuRequestPermission" -> {
+                        // Shizuku 的授权框是异步的：先挂起通道结果，
+                        // 用户点完在 onRequestPermissionResult 里回话
+                        pendingShizukuResult = result
+                        Shizuku.requestPermission(REQUEST_SHIZUKU)
+                    }
+                    "openVivoWriteSettings" -> result.success(openVivoWriteSettings())
                     else -> result.notImplemented()
                 }
             }
+
+        Shizuku.addRequestPermissionResultListener(shizukuPermissionListener)
     }
 
     // ── 保存 ─────────────────────────────────────────────────
@@ -209,6 +248,130 @@ class MainActivity : FlutterActivity() {
         return target.absolutePath
     }
 
+    // ── 通知权限 ─────────────────────────────────────────────
+
+    /**
+     * Android 13（API 33）起，通知要运行时授权才会显示。媒体通知是
+     * 「灵动岛」类胶囊、锁屏控制和线控的载体，启动时尽力申请一次；
+     * 被拒不阻塞任何功能，用户随时可以在系统设置里补开。
+     */
+    private fun ensureNotificationPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        ) return
+        requestPermissions(
+            arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+            REQUEST_NOTIFICATIONS,
+        )
+    }
+
+    // ── vivo 原子随身听白名单 ─────────────────────────────────
+
+    /**
+     * vivo / iQOO（OriginOS 4）原子随身听的音源白名单存在 system settings
+     * 表里，key 是 musicwidget_list_pkg_type_key。两条写入通道自动选路：
+     *
+     *   Shizuku 在线  → 以 shell 身份执行 settings put（与社区 ADB 教程
+     *                   完全等效，保真度最高）；
+     *   否则          → Settings API 直写（需用户授予「修改系统设置」）。
+     *
+     * key 不存在（非 vivo 设备 / 新版 OriginOS 换了实现）返回 null。
+     */
+    private fun getVivoWhitelist(): String? = runCatching {
+        // Shizuku 优先（shell 身份，与社区 ADB 教程完全等效）；
+        // 执行失败（反射不可用 / 命令报错）时退回 Settings API 直读
+        if (shizukuReady()) shizukuGet() ?: fallbackRead() else fallbackRead()
+    }.getOrNull()
+
+    private fun setVivoWhitelist(json: String): Boolean {
+        // Shizuku 优先，失败（未授权 / 反射不可用）时退回 WRITE_SETTINGS
+        if (shizukuReady() && shizukuPut(json)) return true
+        return runCatching {
+            Settings.System.putString(contentResolver, VIVO_WHITELIST_KEY, json)
+        }.getOrDefault(false)
+    }
+
+    /**
+     * Shizuku 以 shell 身份执行命令，返回 (stdout, 退出码)。
+     *
+     * 为什么反射：API 13 的 Shizuku.newProcess 是 private 的（官方只推
+     * bindUserService 的 AIDL 服务路线），但一次性 settings 命令不值得
+     * 背一套服务生命周期。签名哪天变了 runCatching 会兜住，自动退回
+     * 「修改系统设置」通道，无副作用。
+     */
+    private fun shizukuExec(command: String): Pair<String, Int>? = runCatching {
+        val method = Shizuku::class.java.getDeclaredMethod(
+            "newProcess",
+            Array<String>::class.java,
+            Array<String>::class.java,
+            String::class.java,
+        )
+        method.isAccessible = true
+        val proc = method.invoke(
+            null,
+            arrayOf("sh", "-c", command),
+            null,
+            null,
+        ) as Process
+        try {
+            val out = proc.inputStream.bufferedReader().readText().trim()
+            val code = proc.waitFor()
+            out to code
+        } finally {
+            proc.destroy()
+        }
+    }.getOrNull()
+
+    private fun shizukuGet(): String? {
+        val result =
+            shizukuExec("settings get system $VIVO_WHITELIST_KEY") ?: return null
+        if (result.second != 0) return null
+        val out = result.first
+        return if (out.isEmpty() || out == "null") null else out
+    }
+
+    private fun shizukuPut(json: String): Boolean {
+        // json 里只有双引号，shell 单引号包裹不会冲突
+        val result =
+            shizukuExec("settings put system $VIVO_WHITELIST_KEY '$json'")
+                ?: return false
+        return result.second == 0
+    }
+
+    private fun shizukuAlive(): Boolean = runCatching { Shizuku.pingBinder() }.getOrDefault(false)
+
+    private fun shizukuGranted(): Boolean = runCatching {
+        Shizuku.pingBinder() && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+    }.getOrDefault(false)
+
+    private fun shizukuReady(): Boolean = shizukuAlive() && shizukuGranted()
+
+    /** 不经 Shizuku 的兜底读法：Settings API（需已授予「修改系统设置」才能写） */
+    private fun fallbackRead(): String? =
+        Settings.System.getString(contentResolver, VIVO_WHITELIST_KEY)
+
+    private val shizukuPermissionListener =
+        Shizuku.OnRequestPermissionResultListener { _, grantResult ->
+            pendingShizukuResult?.success(
+                grantResult == PackageManager.PERMISSION_GRANTED,
+            )
+            pendingShizukuResult = null
+        }
+
+    /** 跳到系统的「修改系统设置」授权页，让用户手动打开开关 */
+    private fun openVivoWriteSettings(): Boolean = try {
+        startActivity(
+            Intent(
+                Settings.ACTION_MANAGE_WRITE_SETTINGS,
+                Uri.parse("package:$packageName"),
+            ),
+        )
+        true
+    } catch (e: Exception) {
+        false
+    }
+
     // ── 查询已下载 ───────────────────────────────────────────
 
     /** 列出 Music/PodencoMusic 下已有的文件名，Dart 侧用它判断哪些歌已经下过 */
@@ -289,6 +452,11 @@ class MainActivity : FlutterActivity() {
     companion object {
         private const val CHANNEL = "com.mint.podencomusic/storage"
         private const val REQUEST_WRITE = 4001
+        private const val REQUEST_NOTIFICATIONS = 4002
+        private const val REQUEST_SHIZUKU = 4003
         private const val FOLDER = "PodencoMusic"
+
+        /** OriginOS 原子随身听音源白名单的 settings key（system 表） */
+        private const val VIVO_WHITELIST_KEY = "musicwidget_list_pkg_type_key"
     }
 }

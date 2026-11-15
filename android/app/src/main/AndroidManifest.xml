@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <!--
       Android 10 起写自己的 MediaStore 条目不需要权限，所以这两个只在 9 及以下生效。
       maxSdkVersion 很关键：不加的话，新系统上也会被要求授予「读写存储」，
@@ -10,6 +11,27 @@
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
+
+    <!-- 网络请求。此前只有 debug overlay 声明了它，release 包会直接断网 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!--
+      媒体通知 / MediaSession 前台服务（audio_service）。国内各 ROM 的
+      「灵动岛」类胶囊（小米焦点通知、荣耀灵动胶囊、OPPO 流体云）与锁屏、
+      耳机线控读的都是这套标准媒体通知；前台服务同时保住后台播放不被杀。
+    -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- Android 13 起通知显示要运行时授权，启动时在 MainActivity 里申请 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!--
+      「修改系统设置」特殊权限（用户在系统设置里手动授予，设置页有引导）：
+      仅用于写 vivo 原子随身听的音源白名单 key。有 Shizuku 时优先走
+      Shizuku，这个权限用不上。
+    -->
+    <uses-permission
+        android:name="android.permission.WRITE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
 
     <application
         android:label="Podenco Music"
@@ -37,6 +59,37 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+
+        <!-- audio_service：媒体前台服务（MediaBrowserService 供系统 / 灵动岛胶囊绑定）
+             与线控接收器（耳机 / 蓝牙按键）。类来自 audio_service 库，lint 误报忽略 -->
+        <service
+            android:name="com.ryanheise.audioservice.AudioService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="true"
+            tools:ignore="Instantiatable">
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
+        <receiver
+            android:name="com.ryanheise.audioservice.MediaButtonReceiver"
+            android:exported="true"
+            tools:ignore="Instantiatable">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Shizuku（可选通道）：以 shell 身份写白名单，与 ADB 命令完全等效。
+             用户没装 / 没运行 Shizuku 时应用自动回退 WRITE_SETTINGS 通道 -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:multiprocess="false"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
@@ -58,5 +111,7 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- Shizuku 管理器：检测是否安装 / 拉起授权界面用 -->
+        <package android:name="moe.shizuku.privileged.api" />
     </queries>
 </manifest>

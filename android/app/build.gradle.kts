@@ -47,3 +47,10 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // Shizuku（可选通道）：vivo 原子随身听白名单的 shell 身份写入，
+    // 等效于社区教程的 ADB 命令。Shizuku 未运行时自动回退 WRITE_SETTINGS。
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
+}

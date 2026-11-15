@@ -37,6 +37,11 @@ dependencies:
   cupertino_icons: ^1.0.8
   http: ^1.6.0
   audioplayers: ^6.8.1
+
+  # 媒体通知 / MediaSession 前台服务：国内 ROM 的「灵动岛」类胶囊
+  # （小米焦点通知、荣耀灵动胶囊、OPPO 流体云）与锁屏、线控读的都是
+  # 这套标准媒体通知，不需要厂商 SDK。播放引擎仍是 audioplayers。
+  audio_service: ^0.18.19
   path_provider: ^2.1.6
   shared_preferences: ^2.5.6
 

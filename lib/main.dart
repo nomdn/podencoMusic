@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
 
+import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:system_tray/system_tray.dart';
@@ -18,11 +19,13 @@ import 'downloader.dart';
 import 'library.dart';
 import 'models.dart';
 import 'history_model.dart';
+import 'media_handler.dart';
 import 'pages/home_page.dart';
 import 'player_model.dart';
 import 'playlist_model.dart';
 import 'siren_api.dart';
 import 'storage.dart';
+import 'music_store.dart';
 /// 托盘与窗口管理相关的桌面开关。window_manager / system_tray 都没有
 /// 移动端实现，Android/iOS/Web 上整套逻辑必须跳过。
 /// kIsWeb 短路在前面：Web 上 dart:io 的 Platform 桩一碰就抛。
@@ -46,6 +49,24 @@ Future<void> main() async {
 
   // 扫一遍下载目录，把已经下过的歌记下来。这个可以慢慢来，不阻塞启动。
   unawaited(downloader.scanExisting());
+
+  // Android：把播放桥接成标准媒体通知（MediaSession）。国内各 ROM 的
+  // 「灵动岛」类胶囊（小米焦点通知、荣耀灵动胶囊、OPPO 流体云）、锁屏
+  // 与耳机线控读的都是这套通知；前台服务同时保住后台播放不被系统杀掉。
+  // audio_service 不支持 Windows/Linux 桌面，只在 Android 初始化。
+  if (!kIsWeb && Platform.isAndroid) {
+    await AudioService.init(
+      builder: () => PodencoMediaHandler(),
+      config: const AudioServiceConfig(
+        androidNotificationChannelId: 'com.mint.podencomusic.playback',
+        androidNotificationChannelName: '正在播放',
+        androidNotificationOngoing: true,
+        androidStopForegroundOnPause: true,
+      ),
+    );
+    // Android 13+ 通知要运行时授权：启动时尽力申请一次，被拒不阻塞
+    unawaited(MusicStore.ensureNotificationPermission());
+  }
 
   _registerDebugExtensions();
   if (!kIsWeb) _registerDebugFileHooks();
