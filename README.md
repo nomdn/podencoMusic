@@ -2,7 +2,8 @@
 
 ![Podenco Music](docs/hero.png)
 
-塞壬唱片（[monster-siren.hypergryph.com](https://monster-siren.hypergryph.com/music)）的非官方客户端
+塞壬唱片（[monster-siren.hypergryph.com](https://monster-siren.hypergryph.com/music)）的非官方客户端  
+支持LINUX WINDOWS ANDROID和WEB
 
 ## 致谢
 塞壬唱片-MSR
