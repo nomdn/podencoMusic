@@ -54,6 +54,9 @@ class _SearchPageState extends State<SearchPage> {
           controller: _controller,
           autofocus: true,
           textInputAction: TextInputAction.search,
+          // 键盘上的「搜索」键：结果本来就是即时过滤的，
+          // 按下只需要把键盘收起来（默认行为是毫无反应）
+          onSubmitted: (_) => _dismissKeyboard(),
           decoration: const InputDecoration(
             hintText: '搜索专辑、歌曲或艺人',
             border: InputBorder.none,
@@ -90,6 +93,13 @@ class _SearchPageState extends State<SearchPage> {
       ),
       bottomNavigationBar: const MiniPlayerBar(),
     );
+  }
+
+  /// 收起键盘。搜索页的迷你条挂在 bottomNavigationBar 槽位上，
+  /// Scaffold 只让 body 避开键盘、这个槽不避 —— 点了结果不收键盘的话，
+  /// 刚出现的迷你条会被键盘整个盖住。
+  void _dismissKeyboard() {
+    FocusManager.instance.primaryFocus?.unfocus();
   }
 }
 
@@ -177,11 +187,15 @@ class _Results extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => AlbumPage(album: entry),
-              ),
-            ),
+            onTap: () {
+              // 不收键盘的话，返回本页时键盘会自己再弹出来
+              FocusManager.instance.primaryFocus?.unfocus();
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => AlbumPage(album: entry),
+                ),
+              );
+            },
           );
         }
 
@@ -207,7 +221,11 @@ class _Results extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
-          onTap: () => playerModel.playQueue(tracks, start: startIndex),
+          onTap: () {
+            // 键盘不收的话，bottomNavigationBar 槽位上刚出现的迷你条会被它盖住
+            FocusManager.instance.primaryFocus?.unfocus();
+            playerModel.playQueue(tracks, start: startIndex);
+          },
           onLongPress: () => showAddToPlaylistSheet(context, [track]),
         );
       },
