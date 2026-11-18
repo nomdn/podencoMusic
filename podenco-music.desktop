@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Podenco Music
+GenericName=Music Player
+Comment=博士，罗德岛音频终端已就绪：塞壬唱片、B站影像与弹幕
+Exec=/opt/podenco-music/podenco_music
+Icon=podenco
+Terminal=false
+Categories=AudioVideo;Player;Audio;Music;
+Keywords=music;bili;bilibili;danmaku;player;siren;monster-siren;arknights;塞壬唱片播放器;
+Keywords[zh_CN]=音乐;哔哩哔哩;B站;弹幕;播放器;塞壬;塞壬唱片;塞壬唱片播放器;明日方舟;monster-siren;arknights;
+StartupWMClass=podenco_music

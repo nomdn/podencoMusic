@@ -4,8 +4,11 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   audioplayers_linux
+  file_selector_linux
+  media_kit_libs_linux
   screen_retriever_linux
   system_tray
+  media_kit_video
   window_manager
 )
 

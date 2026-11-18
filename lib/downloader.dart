@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
 import 'audio_tags.dart';
+import 'bili_api.dart';
 import 'disk_space.dart';
 import 'library.dart';
 import 'models.dart';
@@ -38,7 +39,6 @@ class DownloadState {
   bool get isQueued => status == DownloadStatus.queued;
   bool get isRunning => status == DownloadStatus.running;
   bool get isDone => status == DownloadStatus.done;
-  bool get isFailed => status == DownloadStatus.failed;
 }
 
 /// queueAll 的结果：加了几首、跳了几首、有没有被磁盘检查拦下。
@@ -104,9 +104,6 @@ class Downloader extends ChangeNotifier {
   /// 直接从状态表推导，别用单个「当前任务」字段 —— 那样单曲
   /// 直下的任务在管理页上永远显示不出来。
   List<Track> get runningTracks => _byStatus(DownloadStatus.running);
-
-  /// 按 cid 找回 Track。只认经手过下载的，没见过返回 null。
-  Track? trackOf(String cid) => _known[cid];
 
   /// 已完成 / 失败的歌，新的在前。管理页的两个静态区用。
   List<Track> get doneTracks => _byStatus(DownloadStatus.done);
@@ -192,7 +189,7 @@ class Downloader extends ChangeNotifier {
         return QueueResult(
           added: 0,
           skipped: tracks.length,
-          blockedReason: '此浏览器不支持文件下载（需 Chrome / Edge）',
+          blockedReason: '当前浏览器不支持归档（需 Chrome / Edge）',
         );
       }
       // 目录授权要趁用户手势还在（弹选择框 / 续权）：批量任务的第一首
@@ -201,7 +198,7 @@ class Downloader extends ChangeNotifier {
         return QueueResult(
           added: 0,
           skipped: tracks.length,
-          blockedReason: '未选择 / 未授权下载目录',
+          blockedReason: '未选择 / 未授权归档目录',
         );
       }
     }
@@ -243,7 +240,7 @@ class Downloader extends ChangeNotifier {
           track.cid,
           const DownloadState(
             status: DownloadStatus.failed,
-            error: '此浏览器不支持文件下载（需 Chrome / Edge）',
+            error: '当前浏览器不支持归档（需 Chrome / Edge）',
           ),
         );
         return null;
@@ -253,7 +250,7 @@ class Downloader extends ChangeNotifier {
           track.cid,
           const DownloadState(
             status: DownloadStatus.failed,
-            error: '未选择 / 未授权下载目录',
+            error: '未选择 / 未授权归档目录',
           ),
         );
         return null;
@@ -323,7 +320,7 @@ class Downloader extends ChangeNotifier {
     }
     if (freeBytes == null) return null;
     if (freeBytes >= DiskSpace.minFreeBytes) return null;
-    return '磁盘剩余空间不足（${_formatBytes(freeBytes)}），先清理一下再试';
+    return '磁盘剩余空间不足（${_formatBytes(freeBytes)}），请先清理缓存';
   }
 
   static String _formatBytes(int bytes) {
@@ -337,9 +334,24 @@ class Downloader extends ChangeNotifier {
     _publish(cid, const DownloadState(status: DownloadStatus.running));
 
     try {
-      // 还是要先换直链 —— 列表里的 Track 没有地址
-      final detail = await SirenApi.songDetail(cid);
-      final extension = _extensionOf(detail.sourceUrl);
+      // 还是要先换直链 —— 列表里的 Track 没有地址。
+      // 两个源取地址的方式不同：塞壬走 /api/song，B站走 playurl；
+      // B站的地址还额外要求带请求头，所以把它一起往下传。
+      final String sourceUrl;
+      final String extension;
+      final Map<String, String>? headers;
+      if (track.isBili) {
+        sourceUrl = await BiliApi.audioUrl(track.cid);
+        // dash 音轨是 fragmented mp4，容器里只有音频轨。
+        // 用 .m4a 命名最贴切，MediaStore 那边也认 audio/mp4。
+        extension = '.m4a';
+        headers = BiliApi.streamHeaders(track.cid);
+      } else {
+        final detail = await SirenApi.songDetail(cid);
+        sourceUrl = detail.sourceUrl;
+        extension = _extensionOf(detail.sourceUrl);
+        headers = null;
+      }
       final fileName = '${_stemFor(track)}$extension';
 
       String location;
@@ -347,32 +359,37 @@ class Downloader extends ChangeNotifier {
         // Web：fetch 流式读 + File System Access 流式写。没法嵌标签
         //（ID3 / WAV 头重排需要整文件重写），先存纯净音频。
         location = await _saveToWeb(
-          sourceUrl: detail.sourceUrl,
+          sourceUrl: sourceUrl,
           fileName: fileName,
           cid: cid,
         );
       } else {
-        // 元数据（歌名/艺人/专辑/封面）组装失败就给 null，下载照常进行
+        // 元数据（歌名/艺人/专辑/封面）组装失败就给 null，下载照常进行。
+        // m4a 写不了标签，就别白跑一趟去下封面了。
         AudioTag? tag;
-        try {
-          tag = await _tagFor(track);
-        } catch (e) {
-          debugPrint('[download] 元数据组装失败：$e');
+        if (extension == '.mp3' || extension == '.wav') {
+          try {
+            tag = await _tagFor(track);
+          } catch (e) {
+            debugPrint('[download] 元数据组装失败：$e');
+          }
         }
 
         location = MusicStore.isSupported
             ? await _saveToAndroidMusic(
-                sourceUrl: detail.sourceUrl,
+                sourceUrl: sourceUrl,
                 fileName: fileName,
                 mimeType: _mimeOf(extension),
                 cid: cid,
                 tag: tag,
+                headers: headers,
               )
             : await _saveToFolder(
-                sourceUrl: detail.sourceUrl,
+                sourceUrl: sourceUrl,
                 fileName: fileName,
                 cid: cid,
                 tag: tag,
+                headers: headers,
               );
       }
 
@@ -389,7 +406,7 @@ class Downloader extends ChangeNotifier {
     } on PlatformException catch (e) {
       // 原生抛回来的：权限被拒、MediaStore 插入失败等
       debugPrint('[download] ${track.name} 原生保存失败：${e.code} ${e.message}');
-      _failOrCancel(cid, e.message ?? '保存到音乐库失败');
+      _failOrCancel(cid, e.message ?? '归档至音乐库失败');
       return null;
     } catch (e, stack) {
       debugPrint('[download] ${track.name} 失败：$e');
@@ -484,12 +501,13 @@ class Downloader extends ChangeNotifier {
     required String mimeType,
     required String cid,
     AudioTag? tag,
+    Map<String, String>? headers,
   }) async {
     final tempDir = await getTemporaryDirectory();
     final temp = File('${tempDir.path}${Platform.pathSeparator}$fileName');
 
     try {
-      await _streamTo(sourceUrl, temp, cid);
+      await _streamTo(sourceUrl, temp, cid, headers: headers);
       // MediaStore 拷贝前把标签写进临时文件，入库的才是带元数据的版本
       await _embedTags(temp, tag, fileName);
 
@@ -499,7 +517,7 @@ class Downloader extends ChangeNotifier {
         mimeType: mimeType,
       );
       if (location == null) {
-        throw const SirenException('保存到音乐库失败');
+        throw const SirenException('归档至音乐库失败');
       }
       return location;
     } finally {
@@ -517,6 +535,7 @@ class Downloader extends ChangeNotifier {
     required String fileName,
     required String cid,
     AudioTag? tag,
+    Map<String, String>? headers,
   }) async {
     final dir = await targetDirectory();
     final target = File('${dir.path}${Platform.pathSeparator}$fileName');
@@ -528,9 +547,9 @@ class Downloader extends ChangeNotifier {
 
     final part = File('${target.path}.part');
     try {
-      await _streamTo(sourceUrl, part, cid);
+      await _streamTo(sourceUrl, part, cid, headers: headers);
       if (await part.length() < 64 * 1024) {
-        throw const SirenException('下载失败：文件不完整');
+        throw const SirenException('归档失败：文件不完整');
       }
       await part.rename(target.path);
       // 改完名再写元数据：标签嵌入失败时，删掉的应该是原音频而不是标签
@@ -548,7 +567,7 @@ class Downloader extends ChangeNotifier {
   /// 曲目号在专辑详情还在会话缓存里时能算出来，拿不到就留空。
   Future<AudioTag?> _tagFor(Track track) async {
     final album = library.albumNameOf(track.albumCid);
-    final coverUrl = library.coverOf(track.albumCid);
+    final coverUrl = library.coverOfTrack(track);
 
     Uint8List? cover;
     var mime = 'image/jpeg';
@@ -612,8 +631,15 @@ class Downloader extends ChangeNotifier {
   /// 流式下载到指定文件，边下边报进度。
   /// 绝不把整首歌读进内存 —— wav 一首能有几十 MB。
   /// 客户端挂在 _activeClients 上，取消时从外面掐断。
-  Future<void> _streamTo(String url, File target, String cid) async {
+  Future<void> _streamTo(
+    String url,
+    File target,
+    String cid, {
+    Map<String, String>? headers,
+  }) async {
     final request = http.Request('GET', Uri.parse(url));
+    // B站音轨的 CDN 要 Referer，不带就是 403
+    if (headers != null) request.headers.addAll(headers);
     final client = http.Client();
     _activeClients[cid] = client;
 
@@ -622,7 +648,7 @@ class Downloader extends ChangeNotifier {
       final response = await client.send(request);
 
       if (response.statusCode != 200) {
-        throw SirenException('下载失败：HTTP ${response.statusCode}');
+        throw SirenException('归档失败：HTTP ${response.statusCode}');
       }
 
       final total = response.contentLength ?? 0;

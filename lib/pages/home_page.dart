@@ -10,6 +10,7 @@ import '../web_download.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/error_view.dart';
 import '../widgets/mini_player.dart';
+import 'favorites_page.dart';
 import 'album_page.dart';
 import 'downloads_page.dart';
 import 'history_page.dart';
@@ -72,6 +73,12 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  void _openFavorites() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const FavoritesPage()),
+    );
+  }
+
   void _openHistory() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => const HistoryPage()),
@@ -112,6 +119,11 @@ class _HomePageState extends State<HomePage> {
             tooltip: '歌单',
           ),
           IconButton(
+            onPressed: _openFavorites,
+            icon: const Icon(Icons.favorite_border),
+            tooltip: '收藏',
+          ),
+          IconButton(
             onPressed: _openSearch,
             icon: const Icon(Icons.search),
             tooltip: '搜索',
@@ -144,7 +156,9 @@ class _HomePageState extends State<HomePage> {
                 child: Row(children: [
                   Icon(Icons.history, size: 20),
                   SizedBox(width: 12),
-                  Text('播放历史'),
+                  // 菜单宽度是紧约束，四个汉字在某些字号下会超出去零点几个像素，
+                  // Flexible 让它自己收，不至于报 overflow
+                  Flexible(child: Text('播放记录')),
                 ]),
               ),
               // Web 端只有支持 File System Access 的浏览器能下载，
@@ -155,7 +169,7 @@ class _HomePageState extends State<HomePage> {
                   child: Row(children: [
                     Icon(Icons.download, size: 20),
                     SizedBox(width: 12),
-                    Text('下载管理'),
+                    Flexible(child: Text('归档管理')),
                   ]),
                 ),
               const PopupMenuItem(
@@ -163,7 +177,7 @@ class _HomePageState extends State<HomePage> {
                 child: Row(children: [
                   Icon(Icons.settings, size: 20),
                   SizedBox(width: 12),
-                  Text('设置'),
+                  Flexible(child: Text('设置')),
                 ]),
               ),
             ],
@@ -186,7 +200,7 @@ class _HomePageState extends State<HomePage> {
 
           final albums = snapshot.data ?? const <Album>[];
           if (albums.isEmpty) {
-            return const Center(child: Text('没有拿到专辑数据'));
+            return const Center(child: Text('未能读取专辑档案'));
           }
           return _AlbumGrid(albums: _sort(albums), onRefresh: () async => _reload());
         },

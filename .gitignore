@@ -55,3 +55,23 @@ app.*.map.json
 
 # 临时下载文件
 pm.tar.gz
+
+# Go 反代（server/）：编译产物和会话状态都不入库
+# state.json 里存着明文的 SESSDATA，绝对不能提交
+server/biliproxy
+server/biliproxy.exe
+server/biliproxy-*
+server/state.json
+server/state.json.tmp
+
+# 编辑器/构建备份文件（如 biliproxy.exe~）
+*~
+
+# WorkBuddy 本地会话与记忆数据，不是源码
+.workbuddy/
+
+# Linux 打包产物：即使拷到仓库根也不要误提交
+*.deb
+*.rpm
+*.pkg.tar.zst
+*.flatpak

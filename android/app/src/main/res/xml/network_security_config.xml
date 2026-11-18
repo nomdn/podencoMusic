@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  只给**本机回环**放行明文 HTTP。
+
+  为什么需要：B站音轨要 Referer，播放器又带不了自定义请求头，所以
+  `BiliAudioProxy` 在 127.0.0.1 起了一个转发服务，播放器拿到的是
+  `http://127.0.0.1:<port>/...`。
+
+  targetSdk ≥ 28 时 Android 默认禁止明文 HTTP，而 **MediaPlayer 是
+  native 层、走 java.net，受这条策略约束**（Dart 的 HttpClient 自己写
+  socket，不受约束 —— 所以拉列表、登录都正常，只有播放器被拦）。表现就是
+  `MediaPlayerNative: error (1, -2147483648)` + `Failed to set source`。
+
+  视频页没事是因为它直接连 CDN 的 https。
+
+  不给全局 `usesCleartextTraffic="true"`：那样所有域名都能走明文，上架
+  审核会被问，也没必要。
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">::1</domain>
+    </domain-config>
+</network-security-config>

@@ -9,6 +9,7 @@ import '../playlist_model.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/playlist_dialogs.dart';
+import '../widgets/playlist_export_sheet.dart';
 import 'downloads_page.dart';
 import 'player_page.dart';
 
@@ -59,10 +60,12 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
                 tooltip: '更多操作',
                 onSelected: (action) {
                   if (action == 'rename') _rename(playlist);
+                  if (action == 'export') showPlaylistExportSheet(context, playlist);
                   if (action == 'delete') _delete(playlist);
                 },
                 itemBuilder: (context) => const [
                   PopupMenuItem(value: 'rename', child: Text('重命名')),
+                  PopupMenuItem(value: 'export', child: Text('导出备份')),
                   PopupMenuItem(value: 'delete', child: Text('删除')),
                 ],
               );
@@ -78,7 +81,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
           final playlist = playlistsModel.byId(widget.playlistId);
           // 歌单被删了会走到这；正常流程删除后直接 pop，一般看不到
           if (playlist == null) {
-            return const Center(child: Text('这个歌单不存在或已被删除'));
+            return const Center(child: Text('该歌单档案不存在或已被清除'));
           }
           return ListView.builder(
             itemCount: playlist.tracks.length + 1,
@@ -112,13 +115,13 @@ class _Header extends StatelessWidget {
       return;
     }
     if (result.added == 0) {
-      messenger.showSnackBar(const SnackBar(content: Text('都已经下载过了')));
+      messenger.showSnackBar(const SnackBar(content: Text('所有音轨均已归档')));
       return;
     }
     messenger.showSnackBar(
       SnackBar(
         content: Text(
-          '已加入下载队列（${result.added} 首'
+          '已编入下载队列（${result.added} 首'
           '${result.skipped > 0 ? '，跳过已下载 ${result.skipped} 首' : ''}）',
         ),
         action: SnackBarAction(
@@ -136,7 +139,7 @@ class _Header extends StatelessWidget {
     final theme = Theme.of(context);
     final coverUrl = playlist.tracks.isEmpty
         ? ''
-        : library.coverOf(playlist.tracks.first.albumCid);
+        : library.coverOfTrack(playlist.tracks.first);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -206,7 +209,7 @@ class _Header extends StatelessWidget {
                             ? null
                             : () => _downloadAll(context, playlist.tracks),
                         icon: const Icon(Icons.download),
-                        label: const Text('下载全部'),
+                        label: const Text('归档全部'),
                       ),
                   ],
                 ),

@@ -22,8 +22,8 @@ class _HistoryPageState extends State<HistoryPage> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('清空播放历史'),
-          content: const Text('历史只是个记录，删除不影响歌曲和歌单。'),
+          title: const Text('清空播放记录'),
+          content: const Text('记录仅是作战日志，清除不影响音轨与歌单档案。'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
@@ -55,7 +55,7 @@ class _HistoryPageState extends State<HistoryPage> {
               return IconButton(
                 onPressed: _clear,
                 icon: const Icon(Icons.delete_sweep),
-                tooltip: '清空历史',
+                tooltip: '清空记录',
               );
             },
           ),
@@ -70,7 +70,7 @@ class _HistoryPageState extends State<HistoryPage> {
           if (tracks.isEmpty) {
             return Center(
               child: Text(
-                '还没有播放记录',
+                '尚无播放记录',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -87,7 +87,7 @@ class _HistoryPageState extends State<HistoryPage> {
                   height: 48,
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(4),
-                    child: CoverImage(url: library.coverOf(track.albumCid)),
+                    child: CoverImage(url: library.coverOfTrack(track)),
                   ),
                 ),
                 title: Text(

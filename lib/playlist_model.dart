@@ -62,6 +62,36 @@ class PlaylistModel extends ChangeNotifier {
     return playlist;
   }
 
+  /// 从备份导入。永远是新建，不覆盖本地歌单 —— 导入的内容和现有的
+  /// 哪个「更该留」没有客观答案，让用户自己删多余的那个更安全。
+  ///
+  /// 名字撞了自动加序号（「我的歌单 (2)」），因为界面上靠名字认歌单。
+  Playlist importPlaylist(String name, List<Track> tracks) {
+    final base = name.trim().isEmpty ? '导入的歌单' : name.trim();
+    final playlist = Playlist(
+      // 加下标兜底：一批导入里两次调用可能落在同一微秒
+      id: '${DateTime.now().microsecondsSinceEpoch}-${_playlists.length}',
+      name: _uniqueName(base),
+      createdAt: DateTime.now().millisecondsSinceEpoch,
+      tracks: tracks,
+    );
+    _playlists = [playlist, ..._playlists];
+    notifyListeners();
+    _persist();
+    return playlist;
+  }
+
+  /// 首个空位名字。上限只是防止极端情况下死循环。
+  String _uniqueName(String base) {
+    final taken = _playlists.map((playlist) => playlist.name).toSet();
+    if (!taken.contains(base)) return base;
+    for (var i = 2; i < 1000; i++) {
+      final candidate = '$base ($i)';
+      if (!taken.contains(candidate)) return candidate;
+    }
+    return base;
+  }
+
   void rename(String id, String name) {
     final clean = name.trim();
     if (clean.isEmpty) return;

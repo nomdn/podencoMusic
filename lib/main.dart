@@ -9,18 +9,24 @@ import 'dart:io';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_skill/flutter_skill.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:system_tray/system_tray.dart';
+import 'package:media_kit/media_kit.dart' show MediaKit;
 // 0.7 把经典的 windowManager 全局 API 挪进了 legacy 导出，托盘场景够用
 import 'package:window_manager/window_manager.dart';
 
 
 import 'downloader.dart';
+import 'bili_store.dart';
+import 'favorites_model.dart';
 import 'library.dart';
 import 'models.dart';
 import 'history_model.dart';
 import 'media_handler.dart';
+import 'pages/bili_video_page.dart';
 import 'pages/home_page.dart';
+import 'widgets/bili_danmaku_overlay.dart';
 import 'player_model.dart';
 import 'playlist_model.dart';
 import 'siren_api.dart';
@@ -37,12 +43,24 @@ Future<void> main() async {
   // 恢复播放状态要用 shared_preferences，那是平台通道，得先初始化绑定
   WidgetsFlutterBinding.ensureInitialized();
 
+  // 原生端的音视频都压给 media_kit（libmpv）：视频页一个播放器吃 DASH，
+  // 音乐播放也用它（能带请求头，B站 CDN 的 Referer 校验不再需要本地反代）。
+  // 必须在这里初始化一次，晚于任何 Player 的构造都会崩。
+  // Web 上走 audioplayers + video_player，不加载 libmpv。
+  if (!kIsWeb) MediaKit.ensureInitialized();
+
+
   // 先把上次的队列/模式/音量读回来，再起界面 —— 这样首帧迷你条就是对的
   await playerModel.restore();
 
   // 歌单和播放历史一起读。都是本地数据，先读再起界面，进页面不用等闪一下
   await playlistsModel.load();
   await historyModel.load();
+
+  // B站数据源开关 + 登录态、收藏。都是本地读写，很快；收藏读出来
+  // 收藏按钮才能在首帧就显示正确的状态。
+  await biliModel.load();
+  await favoritesModel.load();
 
   // 接口代理地址（设置页可改）：在首次网络请求之前生效
   SirenApi.host = await ApiConfigStorage.load();
@@ -71,6 +89,14 @@ Future<void> main() async {
   _registerDebugExtensions();
   if (!kIsWeb) _registerDebugFileHooks();
 
+  // 调试期给 AI/自动化工具留的「手眼」：flutter_skill 在 debug 包里注册
+  // VM Service 扩展（点按/滑动/截图/日志，253 个工具），release 包
+  // kDebugMode 为 false 直接跳过，产物零开销。
+  // autoEnableIndicators 关掉：它会往界面上叠测试框，日常用会碍事。
+  if (kDebugMode) {
+    FlutterSkillBinding.ensureInitialized(autoEnableIndicators: false);
+  }
+
   // 托盘/关窗隐藏是桌面功能：window_manager 没有移动端实现，
   // 在 Android/iOS 上调用会抛 MissingPluginException。移动端
   // 也没有「窗口」概念，整套托盘逻辑只在桌面三平台启用。
@@ -84,6 +110,59 @@ Future<void> main() async {
   if (_isDesktop) {
     unawaited(_initTray());
   }
+  _maybeLaunchFromQuery();
+}
+
+/// 仅 debug：URL 查询串驱动的定点复现钩子。
+///
+/// Web 调试时改动一行代码就要重新「搜索 → 点进视频 → 拖进度条」，而弹幕
+/// 问题恰恰只在特定时间点复现，手动走到那一步的噪声比信号大。这里允许
+/// 直接用一条链接落到目标视频的指定播放位置：
+///
+///   http://127.0.0.1:8080/?debugBvid=BV18t421n7cq&debugSeek=27000
+///
+/// 支持参数（都可省略）：
+///   debugBvid   必填，BV 号。缺省时整条钩子不生效，正常进首页。
+///   debugSeek   进页面后先 seek 到的时间，单位毫秒。
+///   debugLoop   1 = 循环播放，便于反复观察同一段。
+///   debugTitle  AppBar 标题，缺省用 BV 号。
+///
+/// release 包 kDebugMode 为 false，整段不执行。
+void _maybeLaunchFromQuery() {
+  if (!kDebugMode) return;
+  final query = Uri.base.queryParameters;
+  final bvid = query['debugBvid']?.trim() ?? '';
+  if (bvid.isEmpty) return;
+
+  final seekMs = int.tryParse(query['debugSeek']?.trim() ?? '') ?? 0;
+  final loop = query['debugLoop'] == '1';
+  final title = (query['debugTitle']?.trim().isNotEmpty ?? false)
+      ? query['debugTitle']!.trim()
+      : bvid;
+
+  // 要等第一帧建立出 Navigator，才能 push
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    final navigator = PodencoApp.navigatorKey.currentState;
+    if (navigator == null) {
+      debugPrint('[DEBUG-LAUNCH] navigator 未就绪，放弃跳转');
+      return;
+    }
+    debugPrint(
+      '[DEBUG-LAUNCH] bvid=$bvid seek=${seekMs}ms loop=$loop title=$title',
+    );
+    unawaited(
+      navigator.push(
+        MaterialPageRoute<void>(
+          builder: (_) => BiliVideoPage(
+            bvid: bvid,
+            title: title,
+            initialPosition: Duration(milliseconds: seekMs),
+            loop: loop,
+          ),
+        ),
+      ),
+    );
+  });
 }
 
 /// 托盘图标。音乐播放器的托盘价值就一条：窗口关了音乐还在放 ——
@@ -384,6 +463,19 @@ void _registerDebugExtensions() {
       jsonEncode({'triggered': true}),
     );
   });
+
+  // 弹幕引擎内部状态：屏上到底有几条、有没有「同时间戳同文本」的重复、
+  // 暂停时引擎有没有真的停。以前这些问题只能靠肉眼盯截图，现在读一个
+  // JSON 就能断言。
+  //
+  // 必须注册在 main()：DWDS 只认 isolate 启动阶段注册的扩展，运行期
+  // 动态注册的 handler 调用时一律回落成 "Unexpected null value" （试过，
+  // 连返回常量都会失败）。
+  developer.registerExtension('ext.podenco/dm', (method, params) async {
+    final snapshot =
+        BiliDanmakuOverlayState.active?.probeSnapshot() ?? {'mounted': false};
+    return developer.ServiceExtensionResponse.result(jsonEncode(snapshot));
+  });
 }
 
 /// 状态落盘诊断钩子，release 也开着（暂不回收）。
@@ -466,11 +558,17 @@ void _registerDebugFileHooks() {
 class PodencoApp extends StatelessWidget {
   const PodencoApp({super.key});
 
+  /// 调试查询串钩子要在 runApp 之后主动 push 视频页，需要一个外层能抓到的
+  /// Navigator key。release 里没人用它，留着也无副作用。
+  static final GlobalKey<NavigatorState> navigatorKey =
+      GlobalKey<NavigatorState>();
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Podenco Music',
       debugShowCheckedModeBanner: false,
+      navigatorKey: navigatorKey,
       theme: _build(Brightness.light),
       darkTheme: _build(Brightness.dark),
       // 跟随系统。桌面上想在标题栏里切换的话，把这里改成固定值即可。

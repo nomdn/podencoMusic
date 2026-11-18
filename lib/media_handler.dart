@@ -42,7 +42,7 @@ class PodencoMediaHandler extends BaseAudioHandler {
 
     // ── 当前曲目元信息 ──
     if (track != null) {
-      final cover = library.coverOf(track.albumCid);
+      final cover = library.coverOfTrack(track);
       final title = m.detail?.name ?? track.name;
       final artist = artistsOf(m.detail?.artists ?? track.artists);
       final duration = m.duration > Duration.zero ? m.duration : null;
@@ -103,7 +103,7 @@ class PodencoMediaHandler extends BaseAudioHandler {
 
   /// 队列项映射成 MediaItem。列表项没有详情，标题 / 歌手 / 封面够用。
   MediaItem _mediaItemOf(Track track) {
-    final cover = library.coverOf(track.albumCid);
+    final cover = library.coverOfTrack(track);
     return MediaItem(
       id: track.cid,
       title: track.name,

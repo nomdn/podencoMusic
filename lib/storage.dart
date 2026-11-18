@@ -6,8 +6,9 @@ import 'models.dart';
 
 /// 需要跨启动保留的东西：队列、播到第几首、模式、音量。
 ///
-/// 故意不存播放进度 —— 音频直链带签名会过期，恢复时得重新换源，
-/// 存一个 seek 位置也用不上，还容易让人以为「一开 app 就自动放」。
+/// 这里不存播放进度，进度单独放在 [ProgressStorage] ——
+/// 位置每几秒就变一次，跟队列挤在同一个键里会导致整份 JSON
+/// 反复序列化（队列最多 300 首），写盘量大得没必要。
 class PlayerSnapshot {
   const PlayerSnapshot({
     required this.queue,
@@ -81,6 +82,60 @@ class PlayerStorage {
       );
     } catch (_) {
       // 写失败只影响下次启动的记忆，不影响当前播放
+    }
+  }
+}
+
+/// 每首歌听到哪了的本地存档：`cid → 毫秒`。
+///
+/// 单独一个键，写盘只序列化这张小表，不受队列大小影响。
+/// 上限 [_maxEntries] 首歌，超了从最早的开始丢 —— 没什么人会在意
+/// 五百首之前那首听到第几秒，但无限增长迟早会拖慢启动。
+class ProgressStorage {
+  static const _key = 'song_progress_v1';
+  static const _maxEntries = 500;
+
+  static Future<Map<String, int>> load() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_key);
+      if (raw == null || raw.isEmpty) return {};
+
+      final json = jsonDecode(raw);
+      if (json is! Map<String, dynamic>) return {};
+
+      final progress = json['progress'];
+      if (progress is! Map<String, dynamic>) return {};
+
+      return {
+        for (final entry in progress.entries)
+          if (entry.value is num) entry.key: (entry.value as num).toInt(),
+      };
+    } catch (_) {
+      // 存档格式对不上就当没存过。绝不能因为一个坏文件让 app 起不来。
+      return {};
+    }
+  }
+
+  static Future<void> save(Map<String, int> progress) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      // 只留最近的若干条。Map 的迭代顺序就是插入顺序，
+      // 更新已有键不会改变位置，所以先插进来的就是最久没碰的。
+      final entries = progress.entries.toList();
+      final kept = entries.length > _maxEntries
+          ? entries.sublist(entries.length - _maxEntries)
+          : entries;
+
+      await prefs.setString(
+        _key,
+        jsonEncode({
+          'progress': {for (final e in kept) e.key: e.value},
+        }),
+      );
+    } catch (_) {
+      // 写失败只影响下次能不能接着听，不影响当前播放
     }
   }
 }

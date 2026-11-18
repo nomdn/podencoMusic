@@ -52,7 +52,7 @@ class MiniPlayerBar extends StatelessWidget {
                           width: 62,
                           height: 62,
                           child: CoverImage(
-                            url: library.coverOf(track.albumCid),
+                            url: library.coverOfTrack(track),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -101,7 +101,7 @@ class MiniPlayerBar extends StatelessWidget {
                               messenger.hideCurrentSnackBar();
                               messenger.showSnackBar(
                                 SnackBar(
-                                  content: Text(playerModel.error ?? '播放失败'),
+                                  content: Text(playerModel.error ?? '音轨部署失败'),
                                   duration: const Duration(seconds: 6),
                                 ),
                               );
@@ -110,7 +110,7 @@ class MiniPlayerBar extends StatelessWidget {
                               Icons.error_outline,
                               color: Theme.of(context).colorScheme.error,
                             ),
-                            tooltip: '播放失败，点看原因',
+                            tooltip: '音轨部署失败，点看详情',
                           )
                         else
                           IconButton(

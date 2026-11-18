@@ -82,24 +82,53 @@ class AlbumDetail {
   };
 }
 
+/// 曲目的来源。两个源共用一套队列/歌单/播放器，靠这个字段决定
+/// 播放时去哪里换音频地址、封面从哪来。
+enum TrackSource {
+  /// 塞壬唱片：cid 是塞壬的数字 id，封面靠 albumCid 反查
+  siren,
+
+  /// 哔哩哔哩：cid 就是 BV 号，封面直接存在 [Track.coverUrl] 里
+  bilibili,
+}
+
 /// 列表里的一首歌。只有坐标信息，没有播放地址。
 ///
-/// 播放地址得再调 /api/song/{cid} 换，这也意味着**不能预加载音频**，
-/// 点播放之后才开始拉流，会有一下等待。这是接口本身的限制。
+/// 播放地址得再调一次接口换（塞壬走 /api/song/{cid}，B站走 playurl），
+/// 这也意味着**不能预加载音频**，点播放之后才开始拉流，会有一下等待。
+/// 这是接口本身的限制。
 class Track {
   const Track({
     required this.cid,
     required this.name,
     required this.albumCid,
     required this.artists,
+    this.source = TrackSource.siren,
+    this.coverUrl = '',
+    this.durationMs = 0,
   });
 
   final String cid;
   final String name;
 
-  /// 属于哪张专辑，用来反查封面和专辑名
+  /// 属于哪张专辑，用来反查封面和专辑名。
+  /// B站曲目留空 —— 那边的「专辑」概念是 UP 主，用 artists 表达就够了，
+  /// 填 mid 反而会被塞壬的专辑表查不到而显示成空白。
   final String albumCid;
   final List<String> artists;
+
+  /// 来源。[TrackSource.bilibili] 时 [cid] 是 BV 号。
+  final TrackSource source;
+
+  /// 封面直链。塞壬的曲目不存（按 albumCid 现查），B站的必须存 ——
+  /// 视频封面只属于这一条，没法反查。
+  final String coverUrl;
+
+  /// 音频时长（毫秒）。B站搜索结果里直接给，用来在播放前就显示进度条总长；
+  /// 塞壬留 0，由播放器加载后自己测。
+  final int durationMs;
+
+  bool get isBili => source == TrackSource.bilibili;
 
   /// [albumCid] 是外部补进来的：专辑详情接口返回的 song 里**没有** albumCid
   /// （只有 cid / name / artistes），而全站单曲接口有。
@@ -110,22 +139,36 @@ class Track {
     name: json['name'] as String? ?? '',
     albumCid: albumCid ?? json['albumCid']?.toString() ?? '',
     artists: _names(json['artists'] ?? json['artistes']),
+    source: json['source'] == 'bilibili'
+        ? TrackSource.bilibili
+        : TrackSource.siren,
+    coverUrl: json['coverUrl'] as String? ?? '',
+    durationMs: (json['durationMs'] as num?)?.toInt() ?? 0,
   );
 
   /// 持久化用。字段名跟接口返回保持一致，读回来能直接走 fromJson。
+  /// 塞壬曲目不写后三个字段 —— 存档里 99% 是塞壬的歌，省下的字节
+  /// 乘以几百首就是几 KB。
   Map<String, dynamic> toJson() => {
     'cid': cid,
     'name': name,
     'albumCid': albumCid,
     'artists': artists,
+    if (source != TrackSource.siren) 'source': 'bilibili',
+    if (coverUrl.isNotEmpty) 'coverUrl': coverUrl,
+    if (durationMs > 0) 'durationMs': durationMs,
   };
 
-  /// 只用来补 albumCid：老存档里的歌可能缺这个字段（见 fromJson 的说明）
-  Track copyWith({String? albumCid}) => Track(
+  /// 只用来补字段：老存档里的歌可能缺 albumCid（见 fromJson 的说明），
+  /// B站的歌可能缺时长（搜索结果没给时靠播放器补）。
+  Track copyWith({String? albumCid, String? name, int? durationMs}) => Track(
     cid: cid,
-    name: name,
+    name: name ?? this.name,
     albumCid: albumCid ?? this.albumCid,
     artists: artists,
+    source: source,
+    coverUrl: coverUrl,
+    durationMs: durationMs ?? this.durationMs,
   );
 
   /// 详情接口返回的 song 结构比列表多了音频地址，转成 Track 后进队列

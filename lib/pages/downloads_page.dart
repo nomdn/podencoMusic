@@ -18,7 +18,7 @@ class DownloadsPage extends StatelessWidget {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(ok ? '已交给系统打开' : '没有找到能打开文件夹的应用'),
+        content: Text(ok ? '已交由系统打开' : '未找到可打开该目录的应用'),
       ),
     );
   }
@@ -167,7 +167,7 @@ class _Thumb extends StatelessWidget {
       height: 48,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(4),
-        child: CoverImage(url: library.coverOf(track.albumCid)),
+        child: CoverImage(url: library.coverOfTrack(track)),
       ),
     );
   }
@@ -201,7 +201,7 @@ class _ActiveCard extends StatelessWidget {
                         height: 40,
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(4),
-                          child: CoverImage(url: library.coverOf(track.albumCid)),
+                          child: CoverImage(url: library.coverOfTrack(track)),
                         ),
                       ),
                       const SizedBox(width: 12),

@@ -32,6 +32,22 @@ class MusicStore {
     });
   }
 
+  /// 把一段文本写到系统「下载/PodencoMusic」目录。
+  ///
+  /// 歌单导出用。音频那边必须走 MediaStore.Audio，文本走 Downloads，
+  /// 否则音乐 App 会把 .m3u8 当成一首歌扫进去。
+  /// Android 10+ 免权限；9 及以下需要 WRITE_EXTERNAL_STORAGE。
+  static Future<String?> saveText({
+    required String fileName,
+    required String content,
+  }) async {
+    if (!isSupported) return null;
+    return _channel.invokeMethod<String>('saveText', {
+      'fileName': fileName,
+      'content': content,
+    });
+  }
+
   /// 已经存在 Music/PodencoMusic 里的文件名列表。
   /// 冷启动时用它把「已下载」标记恢复出来，不用请求网络。
   static Future<List<String>> list() async {
@@ -173,6 +189,16 @@ class MusicStore {
     if (!isSupported) return false;
     try {
       return await _channel.invokeMethod<bool>('openMusicFolder') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 打开「下载/PodencoMusic」——歌单导出文件落在那儿，跟音乐不是一个目录。
+  static Future<bool> openExportFolder() async {
+    if (!isSupported) return false;
+    try {
+      return await _channel.invokeMethod<bool>('openExportFolder') ?? false;
     } catch (_) {
       return false;
     }

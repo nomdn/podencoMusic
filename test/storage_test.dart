@@ -50,6 +50,40 @@ void main() {
     });
   });
 
+  // 每首歌的进度表：单独一个键，写盘只动这张小表。
+  group('ProgressStorage', () {
+    test('cid → 毫秒能原样读回来', () async {
+      await ProgressStorage.save({'306861': 42000, '5182': 1500});
+      final loaded = await ProgressStorage.load();
+
+      expect(loaded['306861'], 42000);
+      expect(loaded['5182'], 1500);
+    });
+
+    test('没存过时返回空表，不是 null', () async {
+      final loaded = await ProgressStorage.load();
+      expect(loaded, isEmpty);
+    });
+
+    test('存档是乱码也不会崩', () async {
+      SharedPreferences.setMockInitialValues({'song_progress_v1': '}{'});
+      final loaded = await ProgressStorage.load();
+      expect(loaded, isEmpty);
+    });
+
+    test('超过 500 首时只留最近的，最老的被丢掉', () async {
+      final all = <String, int>{
+        for (var i = 0; i < 520; i++) 'cid$i': i * 1000,
+      };
+      await ProgressStorage.save(all);
+
+      final loaded = await ProgressStorage.load();
+      expect(loaded.length, 500);
+      expect(loaded.containsKey('cid0'), isFalse);
+      expect(loaded.containsKey('cid519'), isTrue);
+    });
+  });
+
   // StaticCache 文件名：key（URL）→ 安全文件名，不同 key 不相撞。
   group('StaticCache.fileNameFor', () {
     test('非法字符被替换成下划线', () {

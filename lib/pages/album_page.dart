@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:material_ui/material_ui.dart';
 
 import '../downloader.dart';
+import '../favorites_model.dart';
 import '../models.dart';
 import '../player_model.dart';
 import '../siren_api.dart';
@@ -9,6 +10,7 @@ import '../widgets/add_to_playlist_sheet.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/download_button.dart';
 import '../widgets/error_view.dart';
+import '../widgets/favorite_button.dart';
 import '../widgets/mini_player.dart';
 import 'downloads_page.dart';
 import 'player_page.dart';
@@ -43,6 +45,10 @@ class _AlbumPageState extends State<AlbumPage> {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
+        actions: [
+          FavoriteButton(item: favoriteOfAlbum(widget.album)),
+          const SizedBox(width: 4),
+        ],
       ),
       body: FutureBuilder<AlbumDetail>(
         future: _request,
@@ -113,7 +119,20 @@ class _AlbumBody extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-              trailing: DownloadButton(track: track, iconSize: 18),
+              // 每行两个操作：加歌单 + 下载。长按行也能加歌单，
+              // 但长按是隐藏操作，触屏和桌面都不好发现，所以给个显式按钮。
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    onPressed: () => showAddToPlaylistSheet(context, [track]),
+                    icon: const Icon(Icons.playlist_add),
+                    iconSize: 20,
+                    tooltip: '编入歌单',
+                  ),
+                  DownloadButton(track: track, iconSize: 18),
+                ],
+              ),
               // 点哪首就从哪首开始，后面的歌自动进队列
               onTap: () => playerModel.playQueue(
                 detail.songs,
@@ -147,7 +166,7 @@ class _Header extends StatelessWidget {
       return;
     }
     if (result.added == 0) {
-      messenger.showSnackBar(const SnackBar(content: Text('都已经下载过了')));
+      messenger.showSnackBar(const SnackBar(content: Text('所有音轨均已归档')));
       return;
     }
     messenger.showSnackBar(
@@ -230,14 +249,14 @@ class _Header extends StatelessWidget {
                           onPressed: () =>
                               showAddToPlaylistSheet(context, detail.songs),
                           icon: const Icon(Icons.playlist_add),
-                          label: const Text('加入歌单'),
+                          label: const Text('编入歌单'),
                         ),
                         // Web 端没有文件下载能力，按钮整体隐藏
                         if (!kIsWeb)
                           OutlinedButton.icon(
                             onPressed: () => _downloadAll(context, detail.songs),
                             icon: const Icon(Icons.download),
-                            label: const Text('下载全部'),
+                            label: const Text('归档全部'),
                           ),
                       ],
                     ),

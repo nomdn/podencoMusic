@@ -2,13 +2,17 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../bili_store.dart';
+import '../favorites_model.dart';
 import '../library.dart';
 import '../models.dart';
 import '../player_model.dart';
 import '../widgets/add_to_playlist_sheet.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/download_button.dart';
+import '../widgets/favorite_button.dart';
 import '../widgets/volume_button.dart';
+import 'bili_video_page.dart';
 
 /// 播放页。宽屏左右分栏（左封面右歌词），窄屏上下堆叠。
 ///
@@ -16,6 +20,17 @@ import '../widgets/volume_button.dart';
 /// 所以这里用 ListenableBuilder 把整棵树包起来，简单直接。
 class PlayerPage extends StatelessWidget {
   const PlayerPage({super.key});
+
+  /// 标题优先用专辑名。B站曲目没有专辑这个概念，退化成 UP 主名 ——
+  /// 总比一律显示「正在播放」有用。
+  String _titleOf(Track track) {
+    final album = library.albumNameOf(track.albumCid);
+    if (album.isNotEmpty) return album;
+    if (track.isBili) {
+      return track.artists.isEmpty ? 'B站视频' : track.artists.join(' / ');
+    }
+    return '正在播放';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,16 +42,14 @@ class PlayerPage extends StatelessWidget {
         if (track == null) {
           return Scaffold(
             appBar: AppBar(title: const Text('正在播放')),
-            body: const Center(child: Text('还没有在播的歌曲')),
+            body: const Center(child: Text('当前没有待命的音轨，博士')),
           );
         }
 
         return Scaffold(
           appBar: AppBar(
             title: Text(
-              library.albumNameOf(track.albumCid).isEmpty
-                  ? '正在播放'
-                  : library.albumNameOf(track.albumCid),
+              _titleOf(track),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -45,6 +58,28 @@ class PlayerPage extends StatelessWidget {
                 onPressed: () => showAddToPlaylistSheet(context, [track]),
                 icon: const Icon(Icons.playlist_add),
                 tooltip: '加入歌单',
+              ),
+              // B站曲目才有画面，塞壬那边没有视频
+              if (track.isBili)
+                IconButton(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => BiliVideoPage(
+                        bvid: track.cid,
+                        title: track.name,
+                        cover: track.coverUrl,
+                      ),
+                    ),
+                  ),
+                  icon: const Icon(Icons.smart_display),
+                  tooltip: '看视频画面',
+                ),
+              FavoriteButton(
+                item: favoriteOfTrack(
+                  track,
+                  coverUrl: library.coverOfTrack(track),
+                  albumName: library.albumNameOf(track.albumCid),
+                ),
               ),
               DownloadButton(track: track),
               const SizedBox(width: 8),
@@ -86,7 +121,7 @@ class PlayerPage extends StatelessWidget {
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(8),
                         child: CoverImage(
-                          url: library.coverOf(track.albumCid),
+                          url: library.coverOfTrack(track),
                         ),
                       ),
                     ),
@@ -127,7 +162,7 @@ class PlayerPage extends StatelessWidget {
                 dimension: cover,
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: CoverImage(url: library.coverOf(track.albumCid)),
+                  child: CoverImage(url: library.coverOfTrack(track)),
                 ),
               ),
               const SizedBox(height: 16),
@@ -367,11 +402,20 @@ class _LyricsPanelState extends State<_LyricsPanel> {
     final theme = Theme.of(context);
 
     if (lines.isEmpty) {
+      final track = playerModel.current;
+      // 未登录时 B站压根不返回字幕列表。这里如果只说「暂无歌词档案」，
+      // 用户会以为是这首歌没字幕，其实是差一个登录。
+      final needLogin = track != null && track.isBili && !biliModel.loggedIn;
       return Center(
-        child: Text(
-          '暂无歌词',
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Text(
+            needLogin ? '字幕需要登录后才可见\n请在设置中扫码登录，博士' : '暂无歌词档案',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              height: 1.6,
+            ),
           ),
         ),
       );

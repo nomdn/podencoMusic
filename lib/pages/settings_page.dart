@@ -2,9 +2,17 @@ import 'package:material_ui/material_ui.dart';
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
+
+import '../bili_api.dart';
+import '../bili_store.dart';
+import '../downloader.dart';
 import '../music_store.dart';
 import '../siren_api.dart';
 import '../storage.dart';
+import '../storage_usage.dart';
+import '../widgets/bili_login_sheet.dart';
+import '../widgets/cover_image.dart';
 import '../widgets/mini_player.dart';
 
 /// 设置页。目前只有一项：接口代理地址。
@@ -34,10 +42,62 @@ class _SettingsPageState extends State<SettingsPage> {
   bool get _vivoInList =>
       _vivoList?.contains(MusicStore.appPackage) ?? false;
 
+  // ── 存储占用 ──
+  StorageUsage? _storage;
+  bool _storageLoaded = false;
+  bool _storageBusy = false;
+
   @override
   void initState() {
     super.initState();
+    // Web 上没有本地目录可统计，连读取都省了
+    if (!kIsWeb) unawaited(_loadStorage());
     if (_vivoSupported) unawaited(_loadVivoWhitelist());
+  }
+
+  /// 反代那一行的副标题。三种状态要能一眼分清：
+  /// 没配、配了且通、配了但连不上（此时其实在直连）。
+  String _proxySummary() {
+    if (biliModel.proxy.isEmpty) return '未配置 · 直连B站';
+    if (biliModel.proxyActive) return '${biliModel.proxy} · 链路正常';
+    return '${biliModel.proxy} · 链路不可达，已退回直连';
+  }
+
+  Future<void> _editProxy(BuildContext context) async {
+    final message = await showDialog<String>(
+      context: context,
+      builder: (_) => _ProxyDialog(initial: biliModel.proxy),
+    );
+    if (message == null || !context.mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _loadStorage() async {
+    final usage = await StorageUsage.read();
+    if (!mounted) return;
+    setState(() {
+      _storage = usage;
+      _storageLoaded = true;
+    });
+  }
+
+  /// 清理后重新统计，数字要跟着变，不能留着旧值骗人
+  Future<void> _runClear(Future<int> Function() clear) async {
+    if (_storageBusy) return;
+    setState(() => _storageBusy = true);
+    try {
+      final removed = await clear();
+      if (!mounted) return;
+      await _loadStorage();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已清理 $removed 份缓存档案')),
+      );
+    } finally {
+      if (mounted) setState(() => _storageBusy = false);
+    }
   }
 
   Future<void> _loadVivoWhitelist() async {
@@ -54,7 +114,7 @@ class _SettingsPageState extends State<SettingsPage> {
     final v = value.trim();
     if (v.isNotEmpty && !v.startsWith('http://') && !v.startsWith('https://')) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('地址需要以 http:// 或 https:// 开头')),
+        const SnackBar(content: Text('反代地址需以 http:// 或 https:// 开头')),
       );
       return;
     }
@@ -270,6 +330,208 @@ class _SettingsPageState extends State<SettingsPage> {
               height: 1.5,
             ),
           ),
+          const SizedBox(height: 24),
+          Text('哔哩哔哩数据源', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 4),
+          Text(
+            '开启后，检索终端会多出「B站」与「UP主」两个来源，可与塞壬并列；'
+            'B站影像也能编入同一歌单，与塞壬音轨混播。\n'
+            '不登录也能检索，但未登录请求易遭风控，登录后更稳。',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              height: 1.5,
+            ),
+          ),
+          if (kIsWeb) ...[
+            const SizedBox(height: 6),
+            Text(
+              '网页端受限：B站会拒绝带 Origin 头的请求（实测 412/403），'
+              '浏览器又不允许设置 Referer / Cookie，'
+              '所以检索、播放、登录在哪一步都过不去。启用B站源需自建代理。',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+                height: 1.5,
+              ),
+            ),
+          ],
+          const SizedBox(height: 4),
+          ListenableBuilder(
+            listenable: biliModel,
+            builder: (context, _) {
+              final session = biliModel.session;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 网页版没配反代时，下面所有按钮点下去都必然失败，
+                  // 与其让人一个个试，不如这里直接说清楚拦在哪
+                  if (kIsWeb && !biliModel.proxyActive) ...[
+                    Text(
+                      '网页端需先部署『接口反代』才能启用B站源 —— 请在下方'
+                      '填入自建反代地址。',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.error,
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('启用B站搜索'),
+                    subtitle: Text(
+                      biliModel.enabled
+                          ? '已启用，检索终端可切换至B站来源'
+                          : '已关闭，检索终端仅检索塞壬档案',
+                    ),
+                    value: biliModel.enabled,
+                    onChanged: (value) => biliModel.setEnabled(value),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: ClipOval(
+                      child: SizedBox(
+                        width: 40,
+                        height: 40,
+                        child: session == null
+                            ? Container(
+                                color: theme.colorScheme.surfaceContainerHighest,
+                                child: Icon(
+                                  Icons.person,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              )
+                            : CoverImage(url: session.face),
+                      ),
+                    ),
+                    title: Text(session?.name ?? '未登录B站'),
+                    subtitle: Text(
+                      session == null
+                          ? kIsWeb && !biliModel.proxyActive
+                                ? '网页端需先配置反代，才能登录'
+                                : '扫码登录你自己的B站账号'
+                          : '已登录 · UID ${session.mid}',
+                    ),
+                    // 网页版的登录同样卡在跨域上（passport 也拦 Origin），
+                    // 配了反代之后这条路就通了 —— 二维码和轮询都由服务端转发
+                    trailing: kIsWeb && !biliModel.proxyActive
+                        ? null
+                        : session == null
+                        ? FilledButton.tonal(
+                            onPressed: () async {
+                              final ok = await showBiliLoginSheet(context);
+                              if (!context.mounted || !ok) return;
+                              // Cookie 登录时用户常只贴 SESSDATA —— 登录是
+                              // 成功的，但发弹幕/评论会被B站拒收（缺 bili_jct
+                              // 作为 csrf）。趁登录的余温立刻预警，别让用户
+                              // 等到发送失败才明白。
+                              final csrfTip = BiliApi.sessionHasCsrf
+                                  ? ''
+                                  : '\n⚠ 这份 Cookie 里没有 bili_jct，发弹幕/评论将被拒收。请重新复制完整 Cookie（含 SESSDATA 和 bili_jct）';
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    '欢迎回来，Dr.${biliModel.session?.name ?? ''}$csrfTip',
+                                    style: TextStyle(
+                                      color: BiliApi.sessionHasCsrf
+                                          ? null
+                                          : Theme.of(context)
+                                              .colorScheme
+                                              .error,
+                                    ),
+                                  ),
+                                  duration: const Duration(seconds: 5),
+                                ),
+                              );
+                            },
+                            child: const Text('扫码登录'),
+                          )
+                        : TextButton(
+                            onPressed: () async {
+                              await BiliApi.logout();
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('已退出B站账号')),
+                              );
+                            },
+                            child: const Text('退出登录'),
+                          ),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.cloud_outlined),
+                    title: const Text('接口反代'),
+                    subtitle: Text(_proxySummary()),
+                    trailing: TextButton(
+                      onPressed: () => _editProxy(context),
+                      child: Text(biliModel.proxy.isEmpty ? '配置' : '修改'),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+          // 存储管理只在原生平台有意义：Web 上没有本地文件系统，
+          // 封面走浏览器 HTTP 缓存、下载走 File System Access 写进用户自选目录，
+          // 应用既读不到也清不了，摆一排 0 只会让人以为坏了。
+          if (!kIsWeb) ...[
+            const SizedBox(height: 24),
+            Text('存储', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 4),
+            Text(
+              '封面和歌词都是可以随时重建的缓存，清掉只是下次加载慢一点；'
+              '歌单、播放历史和播放进度存在应用数据里，这里不会动它们。',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 4),
+            if (!_storageLoaded)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: SizedBox(
+                  height: 18,
+                  width: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              )
+            else ...[
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.image_outlined),
+                title: const Text('封面与歌词缓存'),
+                subtitle: Text(
+                  '${StorageUsage.format(_storage!.cacheBytes)} · '
+                  '${_storage!.cacheCount} 个文件',
+                ),
+                trailing: TextButton(
+                  onPressed: _storageBusy || _storage!.cacheCount == 0
+                      ? null
+                      : () => unawaited(_runClear(StorageUsage.clearCache)),
+                  child: const Text('清理'),
+                ),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.download_outlined),
+                title: const Text('已下载的音乐'),
+                subtitle: Text(
+                  _storage!.downloadKnown
+                      ? '${StorageUsage.format(_storage!.downloadBytes)} · '
+                            '${_storage!.downloadCount} 个文件'
+                      : '由系统音乐库管理（Music/PodencoMusic）',
+                ),
+                trailing: TextButton.icon(
+                  onPressed: () => unawaited(downloader.openFolder()),
+                  icon: const Icon(Icons.folder_open, size: 18),
+                  label: const Text('打开'),
+                ),
+              ),
+            ],
+          ],
           if (_vivoSupported) ...[
             const SizedBox(height: 24),
             Text('vivo 原子随身听', style: theme.textTheme.titleMedium),
@@ -338,6 +600,190 @@ class _SettingsPageState extends State<SettingsPage> {
         ],
       ),
       bottomNavigationBar: const MiniPlayerBar(),
+    );
+  }
+}
+
+/// 反代地址的编辑弹窗。
+///
+/// 单独做成有状态组件，是为了「测试」能在不关弹窗的前提下显示结果 ——
+/// 地址常被填错一位，让人反复关开太折磨。
+class _ProxyDialog extends StatefulWidget {
+  const _ProxyDialog({required this.initial});
+
+  final String initial;
+
+  @override
+  State<_ProxyDialog> createState() => _ProxyDialogState();
+}
+
+class _ProxyDialogState extends State<_ProxyDialog>
+    with SingleTickerProviderStateMixin {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initial,
+  );
+
+  /// 测试通过时让对勾弹一下。和登录弹层的成功反馈同一套语言，
+  /// 但这里是内联反馈 —— 用户还在填地址，不能自作主张关掉对话框。
+  late final AnimationController _okAnim = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 600),
+  );
+  late final Animation<double> _okScale = CurvedAnimation(
+    parent: _okAnim,
+    curve: Curves.elasticOut,
+  );
+
+  bool _busy = false;
+  String? _hint;
+  bool _hintOk = false;
+
+  @override
+  void dispose() {
+    _okAnim.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _test() async {
+    setState(() {
+      _busy = true;
+      _hint = null;
+      _hintOk = false;
+    });
+    final result = await BiliApi.probeProxy(_controller.text);
+    if (!mounted) return;
+    final ok = result.startsWith('链路正常');
+    setState(() {
+      _busy = false;
+      _hint = result;
+      _hintOk = ok;
+    });
+    if (ok) {
+      // 连续点两次「测试」也要重播，所以先 reset
+      unawaited(_okAnim.forward(from: 0));
+    }
+  }
+
+  Future<void> _save() async {
+    final value = _controller.text.trim();
+    setState(() {
+      _busy = true;
+      _hint = null;
+    });
+
+    // 清空等于关闭反代，这条不需要联网验证
+    if (value.isEmpty) {
+      await biliModel.setProxy('');
+      if (!mounted) return;
+      Navigator.of(context).pop('反代已关闭 · 恢复直连B站');
+      return;
+    }
+
+    final ok = await biliModel.setProxy(value);
+    if (!mounted) return;
+    if (!ok) {
+      setState(() {
+        _busy = false;
+        _hint = '这个地址连不上，配置未保存';
+        _hintOk = false;
+      });
+      return;
+    }
+    Navigator.of(context).pop('反代链路已建立，博士');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      title: const Text('接口反代'),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '填你自己部署的B站反代地址，例如 https://bili.example.com。'
+              '它负责补上浏览器发不出的 Cookie 和 Referer —— '
+              '网页版必须有它才能用B站源。',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _controller,
+              enabled: !_busy,
+              autofocus: true,
+              keyboardType: TextInputType.url,
+              decoration: const InputDecoration(
+                labelText: '反代地址',
+                hintText: 'https://bili.example.com',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              onSubmitted: (_) => _test(),
+            ),
+            if (_hint != null) ...[
+              const SizedBox(height: 10),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 240),
+                switchInCurve: Curves.easeOut,
+                child: Row(
+                  key: ValueKey('$_hintOk-$_hint'),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_hintOk)
+                      ScaleTransition(
+                        scale: _okScale,
+                        child: Icon(
+                          Icons.check_circle,
+                          size: 18,
+                          color: theme.colorScheme.primary,
+                        ),
+                      )
+                    else
+                      Icon(
+                        Icons.error_outline,
+                        size: 18,
+                        color: theme.colorScheme.error,
+                      ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        _hint!,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: _hintOk
+                              ? theme.colorScheme.primary
+                              : theme.colorScheme.error,
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        TextButton(
+          onPressed: _busy ? null : _test,
+          child: const Text('测试'),
+        ),
+        FilledButton(
+          onPressed: _busy ? null : _save,
+          child: Text(_busy ? '处理中…' : '保存'),
+        ),
+      ],
     );
   }
 }

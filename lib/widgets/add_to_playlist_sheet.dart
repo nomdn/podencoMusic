@@ -92,7 +92,7 @@ class _SheetRow extends StatelessWidget {
     final allIn = contained == tracks.length;
     final coverUrl = playlist.tracks.isEmpty
         ? ''
-        : library.coverOf(playlist.tracks.first.albumCid);
+        : library.coverOfTrack(playlist.tracks.first);
 
     return ListTile(
       leading: SizedBox(

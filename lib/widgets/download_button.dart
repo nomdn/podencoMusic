@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:material_ui/material_ui.dart';
 
+import '../bili_api.dart';
 import '../downloader.dart';
 import '../models.dart';
 import '../music_store.dart';
@@ -15,15 +16,25 @@ class DownloadButton extends StatelessWidget {
   final Track track;
   final double iconSize;
 
+  // 每个 Platform 判断都要先挡 kIsWeb：Web 编译目标上 dart:io 的
+  // Platform.isXxx 会抛 Unsupported operation（实测下载完成后崩在这里）
   bool get _canOpenFolder =>
-      MusicStore.isSupported ||
-      (!kIsWeb && Platform.isWindows) ||
-      Platform.isMacOS ||
-      Platform.isLinux;
+      !kIsWeb &&
+      (MusicStore.isSupported ||
+          Platform.isWindows ||
+          Platform.isMacOS ||
+          Platform.isLinux);
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+
+    // B站音轨在 Web 上默认下不了：CDN 要求 Referer，浏览器加不了，
+    // 跨域还会被拦。配了反代之后这条限制就没了 —— 取流由服务端代劳，
+    // 浏览器只面对一个同源的普通下载地址。
+    if (kIsWeb && track.isBili && !BiliApi.proxyEnabled) {
+      return const SizedBox.shrink();
+    }
 
     // Web：只有支持 File System Access 的浏览器（Chrome / Edge 系）才
     // 显示下载按钮，其余浏览器没有文件下载能力，保持隐藏
@@ -89,7 +100,7 @@ class DownloadButton extends StatelessWidget {
 
     final path = await downloader.download(track);
     if (path == null) {
-      final error = downloader.stateOf(track.cid).error ?? '下载失败';
+      final error = downloader.stateOf(track.cid).error ?? '音轨归档失败';
       messenger.showSnackBar(SnackBar(content: Text(error)));
       return;
     }
@@ -99,10 +110,10 @@ class DownloadButton extends StatelessWidget {
   void _toastSaved(ScaffoldMessengerState messenger, String path) {
     // Web 的「path」其实是落进授权目录的文件名，说法得跟着变
     final message = kIsWeb
-        ? '已保存到授权的下载目录：$path'
+        ? '已归档至授权下载目录：$path'
         : path.startsWith('content://')
-        ? '已保存到系统音乐库 · Music/PodencoMusic'
-        : '已保存：$path';
+        ? '已归档至系统音乐库 · Music/PodencoMusic'
+        : '已归档：$path';
 
     messenger.hideCurrentSnackBar();
     messenger.showSnackBar(
@@ -111,7 +122,7 @@ class DownloadButton extends StatelessWidget {
         duration: const Duration(seconds: 6),
         action: _canOpenFolder
             ? SnackBarAction(
-                label: '打开文件夹',
+                label: '打开归档目录',
                 onPressed: () => downloader.openFolder(),
               )
             : null,

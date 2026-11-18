@@ -6,6 +6,8 @@ import '../playlist_model.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/playlist_dialogs.dart';
+import '../widgets/playlist_export_sheet.dart';
+import '../widgets/playlist_import_sheet.dart';
 import 'playlist_detail_page.dart';
 
 /// 歌单列表页。数据全在本地（playlistsModel），不需要 FutureBuilder，
@@ -54,6 +56,11 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
         title: const Text('歌单'),
         actions: [
           IconButton(
+            onPressed: () => showPlaylistImportSheet(context),
+            icon: const Icon(Icons.file_download),
+            tooltip: '恢复备份',
+          ),
+          IconButton(
             onPressed: _create,
             icon: const Icon(Icons.add),
             tooltip: '新建歌单',
@@ -66,13 +73,18 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
         builder: (context, _) {
           final playlists = playlistsModel.playlists;
           if (playlists.isEmpty) {
-            return _EmptyState(onCreate: _create);
+            return _EmptyState(
+              onCreate: _create,
+              onImport: () => showPlaylistImportSheet(context),
+            );
           }
           return ListView.builder(
             itemCount: playlists.length,
             itemBuilder: (context, index) {
               return _PlaylistRow(
                 playlist: playlists[index],
+                onExport: () =>
+                    showPlaylistExportSheet(context, playlists[index]),
                 onRename: () => _rename(playlists[index]),
                 onDelete: () => _delete(playlists[index]),
               );
@@ -89,11 +101,13 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
 class _PlaylistRow extends StatelessWidget {
   const _PlaylistRow({
     required this.playlist,
+    required this.onExport,
     required this.onRename,
     required this.onDelete,
   });
 
   final Playlist playlist;
+  final VoidCallback onExport;
   final VoidCallback onRename;
   final VoidCallback onDelete;
 
@@ -102,7 +116,7 @@ class _PlaylistRow extends StatelessWidget {
     final theme = Theme.of(context);
     final coverUrl = playlist.tracks.isEmpty
         ? ''
-        : library.coverOf(playlist.tracks.first.albumCid);
+        : library.coverOfTrack(playlist.tracks.first);
 
     return ListTile(
       leading: SizedBox(
@@ -131,10 +145,12 @@ class _PlaylistRow extends StatelessWidget {
       trailing: PopupMenuButton<String>(
         tooltip: '更多操作',
         onSelected: (action) {
+          if (action == 'export') onExport();
           if (action == 'rename') onRename();
           if (action == 'delete') onDelete();
         },
         itemBuilder: (context) => const [
+          PopupMenuItem(value: 'export', child: Text('导出备份')),
           PopupMenuItem(value: 'rename', child: Text('重命名')),
           PopupMenuItem(value: 'delete', child: Text('删除')),
         ],
@@ -149,9 +165,10 @@ class _PlaylistRow extends StatelessWidget {
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.onCreate});
+  const _EmptyState({required this.onCreate, required this.onImport});
 
   final VoidCallback onCreate;
+  final VoidCallback onImport;
 
   @override
   Widget build(BuildContext context) {
@@ -167,7 +184,7 @@ class _EmptyState extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            '还没有歌单',
+            '档案室尚无歌单',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -176,7 +193,14 @@ class _EmptyState extends StatelessWidget {
           FilledButton.icon(
             onPressed: onCreate,
             icon: const Icon(Icons.add),
-            label: const Text('新建歌单'),
+            label: const Text('建立新歌单'),
+          ),
+          const SizedBox(height: 8),
+          // 换了设备 / 重装之后第一个动作往往是「把备份拿回来」
+          TextButton.icon(
+            onPressed: onImport,
+            icon: const Icon(Icons.file_download),
+            label: const Text('从备份恢复档案'),
           ),
         ],
       ),

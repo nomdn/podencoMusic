@@ -58,10 +58,12 @@ class MainActivity : AudioServiceActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "saveToMusic" -> handleSave(call, result)
+                    "saveText" -> handleSaveText(call, result)
                     "listMusic" -> result.success(listMusic())
                     "hasPermission" -> result.success(hasStoragePermission())
                     "getFreeSpace" -> result.success(getFreeSpace())
                     "openMusicFolder" -> result.success(openMusicFolder())
+                    "openExportFolder" -> result.success(openFolderIn(Environment.DIRECTORY_DOWNLOADS))
                     "ensureNotificationPermission" -> {
                         ensureNotificationPermission()
                         result.success(true)
@@ -228,8 +230,106 @@ class MainActivity : AudioServiceActivity() {
         return uri.toString()
     }
 
-    /** Android 9 及以下：直接往公共目录写文件，写完通知媒体库扫描 */
-    @Suppress("DEPRECATION")
+    /**
+     * 把一段文本写进「下载/PodencoMusic」。歌单导出走这里。
+     *
+     * 为什么不复用 saveToMusic：那条路进的是 MediaStore.Audio，
+     * 文本文件会被系统音乐 App 当成一首歌扫出来。文本属于 Downloads。
+     */
+    private fun handleSaveText(call: MethodCall, result: MethodChannel.Result) {
+        val fileName = call.argument<String>("fileName")
+        val content = call.argument<String>("content")
+        if (fileName.isNullOrEmpty() || content == null) {
+            result.error("bad_args", "fileName 和 content 不能为空", null)
+            return
+        }
+
+        // Android 10 起写自己的 Downloads 条目免权限；9 及以下要先有存储权限
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q && !hasStoragePermission()) {
+            result.error("permission_denied", "导出需要存储权限", null)
+            return
+        }
+
+        try {
+            result.success(saveTextToDownloads(fileName, content))
+        } catch (e: Exception) {
+            result.error("save_failed", e.message ?: "导出失败", null)
+        }
+    }
+
+    private fun saveTextToDownloads(fileName: String, content: String): String {
+        val mimeType =
+            if (fileName.endsWith(".json", ignoreCase = true)) {
+                "application/json"
+            } else {
+                "audio/x-mpegurl"
+            }
+        val relativePath = "${Environment.DIRECTORY_DOWNLOADS}/$FOLDER"
+        val bytes = content.toByteArray(Charsets.UTF_8)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val collection = MediaStore.Downloads.getContentUri(
+                MediaStore.VOLUME_EXTERNAL_PRIMARY,
+            )
+
+            // 同名条目先删：反复导出同一个歌单不该在下载目录里堆一串副本
+            contentResolver.query(
+                collection,
+                arrayOf(MediaStore.Downloads._ID),
+                "${MediaStore.Downloads.RELATIVE_PATH}=? AND ${MediaStore.Downloads.DISPLAY_NAME}=?",
+                arrayOf("$relativePath/", fileName),
+                null,
+            )?.use { cursor ->
+                while (cursor.moveToNext()) {
+                    val id = cursor.getLong(0)
+                    contentResolver.delete(
+                        ContentUris.withAppendedId(collection, id),
+                        null,
+                        null,
+                    )
+                }
+            }
+
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(MediaStore.Downloads.MIME_TYPE, mimeType)
+                put(MediaStore.Downloads.RELATIVE_PATH, relativePath)
+                put(MediaStore.Downloads.IS_PENDING, 1)
+            }
+
+            val uri = contentResolver.insert(collection, values)
+                ?: throw IllegalStateException("MediaStore 插入失败")
+
+            try {
+                contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                    ?: throw IllegalStateException("无法打开输出流")
+            } catch (e: Exception) {
+                // 写失败删掉占位，别留 0 字节空壳
+                contentResolver.delete(uri, null, null)
+                throw e
+            }
+
+            values.clear()
+            values.put(MediaStore.Downloads.IS_PENDING, 0)
+            contentResolver.update(uri, values, null, null)
+
+            return uri.toString()
+        }
+
+        // Android 9 及以下：直接写公共下载目录，写完通知媒体库
+        @Suppress("DEPRECATION")
+        val dir = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            FOLDER,
+        )
+        if (!dir.exists()) dir.mkdirs()
+        val file = File(dir, fileName)
+        file.writeText(content, Charsets.UTF_8)
+        MediaScannerConnection.scanFile(this, arrayOf(file.absolutePath), arrayOf(mimeType), null)
+        return file.absolutePath
+    }
+
+    /** Android 9 及以下：直接往公共目录写文件，写完通知媒体库扫描 */    @Suppress("DEPRECATION")
     private fun saveWithFile(sourcePath: String, fileName: String): String {
         val dir = File(
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC),
@@ -435,10 +535,13 @@ class MainActivity : AudioServiceActivity() {
      * （DocumentsUI、小米文件管理等）都认这个格式。打不开返回 false，
      * Dart 侧提示用户去系统音乐 App 找。
      */
-    private fun openMusicFolder(): Boolean = try {
+    private fun openMusicFolder(): Boolean = openFolderIn(Environment.DIRECTORY_MUSIC)
+
+    /** 用 DocumentsUI 打开公共目录（Music / Download）下的 PodencoMusic 子目录 */
+    private fun openFolderIn(parent: String): Boolean = try {
         val uri = DocumentsContract.buildDocumentUri(
             "com.android.externalstorage.documents",
-            "primary:${Environment.DIRECTORY_MUSIC}/$FOLDER",
+            "primary:$parent/$FOLDER",
         )
         val intent = Intent(Intent.ACTION_VIEW)
             .setDataAndType(uri, "vnd.android.document/directory")

@@ -85,4 +85,50 @@ class StaticCache {
       return null;
     }
   }
+
+  /// 当前占用：(字节数, 文件数)。Web 上是 (0, 0)。
+  static Future<(int, int)> stats() async {
+    if (_unavailable) return (0, 0);
+    try {
+      final dir = await _cacheDir();
+      var bytes = 0;
+      var count = 0;
+      for (final entity in dir.listSync()) {
+        if (entity is! File) continue;
+        try {
+          bytes += entity.lengthSync();
+          count++;
+        } catch (_) {
+          // 正在被读写的文件可能取不到大小，跳过
+        }
+      }
+      return (bytes, count);
+    } catch (_) {
+      return (0, 0);
+    }
+  }
+
+  /// 清空缓存。只删文件，目录留着。
+  ///
+  /// 删完之后封面会从网络重下，歌词同理 —— 都是「慢一点」而不是「坏掉」，
+  /// 所以这里不做任何补偿逻辑。
+  static Future<int> clear() async {
+    if (_unavailable) return 0;
+    try {
+      final dir = await _cacheDir();
+      var removed = 0;
+      for (final entity in dir.listSync()) {
+        if (entity is! File) continue;
+        try {
+          await entity.delete();
+          removed++;
+        } catch (_) {
+          // 单个删不掉不影响整体
+        }
+      }
+      return removed;
+    } catch (_) {
+      return 0;
+    }
+  }
 }

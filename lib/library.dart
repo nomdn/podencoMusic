@@ -23,12 +23,15 @@ class Library extends ChangeNotifier {
   List<Album> get albums => List.unmodifiable(_albums);
   List<Track> get songs => _songs;
 
-  /// 专辑列表是否已就绪。迷你条用它决定封面要不要先显示占位。
-  bool get hasAlbums => _albums.isNotEmpty;
-
-  Album? albumOf(String cid) => _albumByCid[cid];
   String coverOf(String cid) => _albumByCid[cid]?.coverUrl ?? '';
   String albumNameOf(String cid) => _albumByCid[cid]?.name ?? '';
+
+  /// 一首歌的封面。
+  ///
+  /// B站的曲目自带封面直链（`coverUrl`），塞壬的要按 albumCid 反查专辑。
+  /// 界面统一走这个方法，就不用到处判断来源了。
+  String coverOfTrack(Track track) =>
+      track.coverUrl.isNotEmpty ? track.coverUrl : coverOf(track.albumCid);
 
   /// 拉全部专辑。并发调用只会发一次请求。
   Future<List<Album>> ensureAlbums() async {

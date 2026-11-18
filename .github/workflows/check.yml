@@ -1,0 +1,40 @@
+name: check
+
+# 静态检查 + 单元测试，三处复用同一份定义：
+#   · pull_request        —— PR 阶段就拦住 analyze/test 失败
+#   · push 到 main        —— 直接推默认分支也兜一层
+#   · workflow_call       —— release.yml 的 check job 引用它，
+#                            四个平台的构建任务不再各跑一遍（原来 4 次重复）
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Analyze & Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      # 版本要与 release.yml 保持一致：pubspec 要求 Dart ^3.14（Flutter 3.50+）
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.50.0'
+          cache: true
+
+      - name: 拉依赖
+        run: flutter pub get
+
+      - name: 静态检查
+        run: flutter analyze
+
+      - name: 单元测试
+        run: flutter test

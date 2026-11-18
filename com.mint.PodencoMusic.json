@@ -1,0 +1,40 @@
+{
+  "app-id": "com.mint.PodencoMusic",
+  "runtime": "org.freedesktop.Platform",
+  "runtime-version": "24.08",
+  "sdk": "org.freedesktop.Sdk",
+  "command": "podenco-music",
+  "finish-args": [
+    "--share=network",
+    "--share=ipc",
+    "--socket=x11",
+    "--socket=wayland",
+    "--socket=pulseaudio",
+    "--device=dri",
+    "--filesystem=xdg-download",
+    "--filesystem=xdg-music:ro",
+    "--talk-name=org.freedesktop.Notifications",
+    "--talk-name=org.mpris.MediaPlayer2"
+  ],
+  "modules": [
+    {
+      "name": "podenco-music",
+      "buildsystem": "simple",
+      "build-options": {
+        "no-debuginfo": true
+      },
+      "build-commands": [
+        "mkdir -p /app/share/applications /app/share/icons/hicolor /app/lib /app/bin",
+        "tar xzf payload.tar.gz",
+        "cp -a bundle/. /app/",
+        "install -m 644 podenco-music-flatpak.desktop /app/share/applications/com.mint.PodencoMusic.desktop",
+        "cp -r icons/. /app/share/icons/hicolor/",
+        "cp -r lib/. /app/lib/",
+        "install -m 755 podenco-music-wrapper /app/bin/podenco-music"
+      ],
+      "sources": [
+        { "type": "file", "path": "payload.tar.gz" }
+      ]
+    }
+  ]
+}
