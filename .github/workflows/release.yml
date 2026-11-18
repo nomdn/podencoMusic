@@ -89,13 +89,20 @@ jobs:
           echo '$nrconf{restart} = "a";' | sudo tee /etc/needrestart/conf.d/99-ci.conf >/dev/null
           echo "debconf debconf/frontend select Noninteractive" | sudo debconf-set-selections
 
-          sudo apt-get update
+          # apt 默认「无限等」：镜像或 DNS 抖一下，它会安安静静卡到 job 超时
+          # （v1.1.4 那次就卡了 30 分钟，最后被 40 分钟上限砍掉）。
+          # 这里给每次请求 20 秒硬上限 + 自动重试，配合外层的 timeout，
+          # 卡住就快速失败重来，而不是把整次发布拖死。
+          echo 'Acquire::http::Timeout "20"; Acquire::https::Timeout "20"; Acquire::Retries "5";' \
+            | sudo tee /etc/apt/apt.conf.d/99-ci-timeout >/dev/null
+
+          timeout 600 sudo apt-get update
           # libmpv-dev 是编译期必需：media_kit_video 的 Linux CMakeLists 里
           # `pkg_check_modules(mpv IMPORTED_TARGET mpv)` 不是 REQUIRED，
           # 缺 mpv.pc 时它静默失败、不生成 PkgConfig::mpv，随后
           # target_link_libraries 才报 “target was not found”；
           # libmpv2 只提供运行时的 libmpv.so.2（Flatpak 收集依赖也要它）。
-          sudo -E apt-get install -y \
+          timeout 1500 sudo -E apt-get install -y \
             -o Dpkg::Options::=--force-confdef \
             -o Dpkg::Options::=--force-confold \
             libgtk-3-dev ninja-build pkg-config libayatana-appindicator3-dev \
