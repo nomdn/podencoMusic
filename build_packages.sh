@@ -34,7 +34,10 @@ fi
 OUT=${OUT:-$REPO_ROOT/build/linux/packages}
 DESKTOP=${DESKTOP:-$W/podenco-music.desktop}
 [ -f "$DESKTOP" ] || DESKTOP=$SCRIPT_DIR/podenco-music.desktop
+# 图标优先用仓库里的 icons/（受版本控制，CI 才有）；老的工作目录
+# build/linux/icons 是历史上生成的位置，保留作兜底。
 ICONS=${ICONS:-$W/icons}
+[ -d "$ICONS" ] || ICONS=$REPO_ROOT/icons
 [ -d "$ICONS" ] || ICONS=$REPO_ROOT/build/linux/icons
 [ -d "$ICONS" ] || { echo "找不到图标目录: $ICONS" >&2; exit 1; }
 

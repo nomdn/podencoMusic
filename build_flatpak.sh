@@ -18,8 +18,10 @@ OUT=${OUT:-$REPO_ROOT/build/linux/packages}
 LINUX_DIR=$REPO_ROOT/build/linux
 TARBALL=${TARBALL:-$LINUX_DIR/podenco_music_linux.tar.gz}
 BUNDLE_SRC=${BUNDLE_SRC:-$W/src/podenco-music}
-ICONS_SRC=${ICONS_SRC:-$LINUX_DIR/icons}
+# 图标优先用仓库里的 icons/（受版本控制，CI 才有）；其余是历史兜底路径。
+ICONS_SRC=${ICONS_SRC:-$REPO_ROOT/icons}
 [ -d "$BUNDLE_SRC" ] || BUNDLE_SRC=$LINUX_DIR/x64/release/bundle
+[ -d "$ICONS_SRC" ] || ICONS_SRC=$LINUX_DIR/icons
 [ -d "$ICONS_SRC" ] || ICONS_SRC=$W/icons
 
 FLATHUB_REMOTE=${FLATHUB_REMOTE:-flathub-ci}
