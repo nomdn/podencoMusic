@@ -496,7 +496,7 @@ class PlayerModel extends ChangeNotifier {
       // 全都不行就明确报错 —— libmpv 能流式解 fMP4，下载整条帮不上忙。
       final isBili = track.isBili;
       if (isBili && kIsWeb && !BiliApi.proxyEnabled) {
-        _error = '网页版播放B站影像需要先配置「接口反代」：'
+        _error = '网页版播放B站影像得经「接口反代」中转：'
             '浏览器改不了 Referer，视频 CDN 会直接拒绝请求。';
         _loading = false;
         notifyListeners();

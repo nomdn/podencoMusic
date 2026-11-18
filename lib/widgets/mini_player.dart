@@ -101,7 +101,7 @@ class MiniPlayerBar extends StatelessWidget {
                               messenger.hideCurrentSnackBar();
                               messenger.showSnackBar(
                                 SnackBar(
-                                  content: Text(playerModel.error ?? '音轨部署失败'),
+                                  content: Text(playerModel.error ?? '音轨加载失败'),
                                   duration: const Duration(seconds: 6),
                                 ),
                               );
@@ -110,7 +110,7 @@ class MiniPlayerBar extends StatelessWidget {
                               Icons.error_outline,
                               color: Theme.of(context).colorScheme.error,
                             ),
-                            tooltip: '音轨部署失败，点看详情',
+                            tooltip: '音轨加载失败，点看详情',
                           )
                         else
                           IconButton(

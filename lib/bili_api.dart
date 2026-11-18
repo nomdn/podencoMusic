@@ -349,6 +349,12 @@ class BiliApi {
     }
   }
 
+  /// 探测成功的固定前缀。
+  ///
+  /// 设置页靠 `startsWith` 判断这次测试过没过，所以它不能是随手写的文案 ——
+  /// 要改措辞就改这个常量，别只改下面那句字符串。
+  static const probeOkPrefix = '通道正常';
+
   /// 探一下反代是否活着，设置页的「测试」按钮用。
   static Future<String> probeProxy(String base) async {
     final cleaned = _normalizeProxy(base);
@@ -359,9 +365,9 @@ class BiliApi {
           .timeout(const Duration(seconds: 8));
       if (res.statusCode != 200) return '服务返回 ${res.statusCode}';
       final json = jsonDecode(utf8.decode(res.bodyBytes));
-      if (json is! Map || json['ok'] != true) return '返回内容不像这个反代';
+      if (json is! Map || json['ok'] != true) return '这个地址不太像B站反代';
       final version = json['version']?.toString() ?? '';
-      return '链路正常${version.isEmpty ? '' : '（v$version）'}';
+      return '$probeOkPrefix${version.isEmpty ? '' : '（v$version）'}';
     } catch (e) {
       return '连不上：$e';
     }
@@ -479,7 +485,7 @@ class BiliApi {
     final uri = Uri.parse('$base$path');
     if (proxyEnabled) {
       if (!await ensureSession()) {
-        throw const BiliException('终端与反代服务的通讯未建立，检查设置里的反代地址');
+        throw const BiliException('还没接上反代服务，检查一下设置里的反代地址');
       }
     } else {
       await ensureGuestCookie();
@@ -517,7 +523,7 @@ class BiliApi {
       // 服务端重启后旧 sid 会变成匿名会话，表现是「明明登录了却看不到收藏」。
       // 这里统一保证先有个会话，拿不到就直接说清楚，比默默降级好。
       if (!await ensureSession()) {
-        throw const BiliException('终端与反代服务的通讯未建立。请核查设置中的『接口反代』地址，博士');
+        throw const BiliException('还没接上反代服务，去设置里看看『接口反代』地址，博士');
       }
     } else {
       await ensureGuestCookie();
@@ -534,7 +540,7 @@ class BiliApi {
       res = await _client.get(uri, headers: headers).timeout(_timeout);
     } on TimeoutException {
       throw BiliException(
-        proxyEnabled ? '反代响应超时，检查服务是否还活着' : 'B站接口超时，检查一下网络',
+        proxyEnabled ? '反代一直没回话，确认下服务还在跑' : 'B站接口超时，检查一下网络',
       );
     } catch (e) {
       throw BiliException(proxyEnabled ? '连不上反代：$e' : '连不上B站：$e');
@@ -567,7 +573,7 @@ class BiliApi {
     final body = utf8.decode(res.bodyBytes);
 
     if (res.statusCode == 401) {
-      throw const BiliException('反代驳回了本次请求。请复核 X-Token 密钥是否配置正确');
+      throw const BiliException('反代拒绝了这次请求，核对一下 X-Token 密钥');
     }
     if (res.statusCode == 429) {
       throw const BiliException('请求密度过高，终端正在冷却。请稍后再试');
@@ -792,7 +798,7 @@ class BiliApi {
     );
 
     final urls = _pickAudioUrls(play);
-    if (urls.isEmpty) throw const BiliException('未检索到可用音轨，该影像暂无音频部署方案');
+    if (urls.isEmpty) throw const BiliException('未检索到可用音轨，这个影像没有声音');
 
     // 缓存里存的是上游原始地址：反代地址是可配置的，改配置后不能拿到旧前缀
     _audioCache[bvid] = _CachedUrl(
@@ -2050,7 +2056,7 @@ class BiliApi {
     if (kIsWeb && !proxyEnabled) {
       // 网页里设置 Cookie 头是被浏览器直接丢掉的，没有反代这条路走不通，
       // 与其让它静默失败，不如说清楚要先配哪个东西
-      throw const BiliException('网页端需先在设置中部署『接口反代』，浏览器不允许页面自带 Cookie');
+      throw const BiliException('网页端要经『接口反代』才能登录，浏览器不让页面自带 Cookie');
     }
 
     final cookie = _mergeCookie(_guestCookie, jar);
@@ -2058,11 +2064,11 @@ class BiliApi {
     if (proxyEnabled) {
       // 真正附在请求上的是服务端手上那份：得先把凭证交过去，再发 nav 才有意义
       if (!await ensureSession()) {
-        throw const BiliException('登录失败，请核查设置中的反代地址');
+        throw const BiliException('登录没成，去设置里核对下反代地址');
       }
       final mid = int.tryParse(jar['DedeUserID'] ?? '') ?? 0;
       if (!await importSession(cookie: cookie, mid: mid)) {
-        throw const BiliException('反代未能识别这段 Cookie 中的 SESSDATA');
+        throw const BiliException('反代没能从这段 Cookie 里认出 SESSDATA');
       }
     }
 

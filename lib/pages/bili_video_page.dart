@@ -158,7 +158,7 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
     if (kIsWeb && !BiliApi.proxyEnabled) {
       setState(() {
         _loading = false;
-        _error = '网页版看视频需要先配置「接口反代」：'
+        _error = '网页版看视频得经「接口反代」中转：'
             '浏览器改不了 Referer，视频 CDN 会直接拒绝请求。';
       });
       return;
