@@ -81,6 +81,10 @@ for f in "$ICONS"/*.png; do
 done
 
 INSTALLED=$(du -sk "$DEB" | awk '{print $1}')
+# 依赖都写成「A | B」的备选：2024 年 Debian/Ubuntu 做过一次时间64位迁移
+# （libasound2 → libasound2t64），libmpv 也分过 libmpv1 / libmpv2 两代。
+# 只写新名字，22.04 和 Debian 12 上会直接 unsatisfied；只写旧名字，24.04+
+# 又装不上。靠 alternatives 让两边都能解析，具体用哪个由 apt 自己挑。
 cat > "$DEB/DEBIAN/control" <<EOF
 Package: $NAME
 Version: $VERSION
@@ -91,7 +95,7 @@ Installed-Size: $INSTALLED
 Maintainer: Podenco Music <noreply@localhost>
 Description: 听歌、看B站视频与弹幕的桌面客户端
  Flutter 桌面应用，支持 B站 音乐播放、视频与高级弹幕渲染。
-Depends: libgtk-3-0, libayatana-appindicator3-1, libdbusmenu-gtk3-4, libmpv2, gstreamer1.0-plugins-base, gstreamer1.0-plugins-good, gstreamer1.0-libav, libasound2t64, libpulse0
+Depends: libgtk-3-0, libayatana-appindicator3-1, libdbusmenu-gtk3-4, libmpv2 | libmpv1, gstreamer1.0-plugins-base, gstreamer1.0-plugins-good, gstreamer1.0-libav, libasound2t64 | libasound2, libpulse0
 EOF
 # DrvFs/共享目录常继承 0777，dpkg-deb 会拒绝，这里显式收紧权限
 chmod 755 "$DEB/DEBIAN"
