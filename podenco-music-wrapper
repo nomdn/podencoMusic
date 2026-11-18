@@ -1,7 +1,0 @@
-#!/bin/sh
-# Flatpak wrapper：设置私有库路径后启动 Flutter app。
-# libmpv 及其依赖被打进 /app/lib，沙箱里系统找不到，必须显式指路。
-export LD_LIBRARY_PATH="/app/lib:${LD_LIBRARY_PATH}"
-export LIBMPV_HOME="/app/lib"
-cd /app
-exec /app/podenco_music "$@"
