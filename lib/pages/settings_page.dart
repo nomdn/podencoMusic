@@ -362,12 +362,13 @@ class _SettingsPageState extends State<SettingsPage> {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 网页版没配反代时，下面所有按钮点下去都必然失败，
-                  // 与其让人一个个试，不如这里直接说清楚拦在哪
+                  // 网页版没有可用反代时，下面所有按钮点下去都必然失败，
+                  // 与其让人一个个试，不如这里直接说清楚拦在哪。
+                  // 默认地址是随包发的，所以这里出现只说明它当前连不通。
                   if (kIsWeb && !biliModel.proxyActive) ...[
                     Text(
-                      '网页端需先部署『接口反代』才能启用B站源 —— 请在下方'
-                      '填入自建反代地址。',
+                      '网页端必须经『接口反代』才能启用B站源 —— 当前地址不可达，'
+                      '请在下方填入可用的反代地址。',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.error,
                         height: 1.5,
@@ -408,7 +409,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     subtitle: Text(
                       session == null
                           ? kIsWeb && !biliModel.proxyActive
-                                ? '网页端需先配置反代，才能登录'
+                                ? '反代当前不可达，网页端暂时无法登录'
                                 : '扫码登录你自己的B站账号'
                           : '已登录 · UID ${session.mid}',
                     ),

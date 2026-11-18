@@ -60,6 +60,16 @@ class BiliModel extends ChangeNotifier {
   static const _proxyKey = 'bili_proxy_v1';
   static const _sidKey = 'bili_sid_v1';
 
+  /// Web 版自带的默认反代地址。
+  ///
+  /// 浏览器直连 B站三道墙全撞：`Origin` 头绕不开、`Referer` 改不了、
+  /// 跨域 `Set-Cookie` 被丢，所以网页版没有反代等于整个数据源不可用。
+  /// 这里预置一个可用地址，打开网页就能搜、能扫码，不必先自己去部署一个。
+  ///
+  /// **只影响 Web**：桌面和移动端由 mpv 自己带请求头，媒体流还走直连，
+  /// 硬塞一个第三方地址只会把请求多绕一跳。
+  static const webDefaultProxy = 'https://podenco-bili.api.wsmdn.top';
+
   bool _enabled = false;
   BiliSession? _session;
   bool _loaded = false;
@@ -87,7 +97,11 @@ class BiliModel extends ChangeNotifier {
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
     _enabled = prefs.getBool(_enabledKey) ?? false;
-    _proxy = prefs.getString(_proxyKey) ?? '';
+
+    // 存档里是 null 才用默认值 —— 空串表示用户主动关掉了反代（走直连），
+    // 那种意愿必须尊重，不能下次启动又把默认地址塞回来。
+    final savedProxy = prefs.getString(_proxyKey);
+    _proxy = savedProxy ?? (kIsWeb ? webDefaultProxy : '');
 
     // 先把本地登录态读出来：下面恢复反代时要用它把凭证补回服务端
     final raw = prefs.getString(_sessionKey);
@@ -104,9 +118,15 @@ class BiliModel extends ChangeNotifier {
     }
 
     // 反代要在任何B站请求之前生效，所以这里等它一次。
-    // 只在「开了数据源且配了反代」时才等 —— 没开 B站源的人完全不受影响，
-    // 否则一个填错的地址会让所有人启动都卡一下。
-    if (_enabled && _proxy.isNotEmpty) {
+    //
+    // 桌面/移动端只在「开了数据源且配了反代」时才等 —— 没开 B站源的人
+    // 完全不受影响，否则一个填错的地址会让所有人启动都卡一下。
+    //
+    // Web 是例外：默认地址是随包发的，设置页首帧就要显示这条链路通不通，
+    // 登录按钮、搜索入口也都靠 proxyActive 判断能不能点。不去连一次，
+    // 界面会对着一个能用的地址说「不可达」。代价是反代真的挂了时启动多等
+    // 一次探测（客户端 5 秒超时封顶），这个交换划算。
+    if ((_enabled || kIsWeb) && _proxy.isNotEmpty) {
       // 复用上次那张票：新建的会话在服务端是空壳，
       // 而客户端的凭证是持久的，两者一错开就会出现「界面说已登录、请求却是匿名」
       _proxyActive = await BiliApi.restoreProxy(
@@ -153,7 +173,9 @@ class BiliModel extends ChangeNotifier {
 
     final prefs = await SharedPreferences.getInstance();
     if (_proxy.isEmpty) {
-      await prefs.remove(_proxyKey);
+      // 存空串而不是删键：Web 版把「没有配置」当成「用自带的默认反代」，
+      // 删了键下次启动默认地址又会回来，用户根本关不掉。
+      await prefs.setString(_proxyKey, '');
       await prefs.remove(_sidKey);
       // 关掉反代之后，凭证只剩服务端那一份。本地没有 cookie 的会话在直连
       // 模式下什么都做不了，留着只会变成「显示已登录、收藏却是空的」
