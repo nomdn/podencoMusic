@@ -82,6 +82,13 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
   int _qn = 64;
   static const _qnKey = 'bili_video_qn_v1';
 
+  /// 弹幕开关。默认开，关掉只是不画。
+  ///
+  /// 弹幕数据照旧拉：重新打开时不用再等一次请求，而且发送条、弹幕量
+  /// 这些信息都还在。用户关一次就永远记住 —— 有人就是嫌它挡字幕。
+  bool _danmakuOn = true;
+  static const _danmakuKey = 'bili_danmaku_on_v1';
+
   /// 服务端当前实际能给的档位（未登录只有 720P/360P）。
   List<int> _qualities = const [];
   List<String> _qualityDesc = const [];
@@ -113,7 +120,18 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getInt(_qnKey);
     if (saved != null && saved > 0) _qn = saved;
+    // 没存过就是开 —— 老用户升级上来行为不变
+    final danmaku = prefs.getBool(_danmakuKey);
+    if (danmaku != null) _danmakuOn = danmaku;
     await _load();
+  }
+
+  /// 开关弹幕，顺手记住。只影响这一层的绘制，不碰数据。
+  Future<void> _toggleDanmaku() async {
+    setState(() => _danmakuOn = !_danmakuOn);
+    _probe('弹幕${_danmakuOn ? '开' : '关'}');
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_danmakuKey, _danmakuOn);
   }
 
   /// 切换清晰度：记住选择、从当前位置续播。
@@ -244,6 +262,16 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
           style: const TextStyle(fontSize: 15),
         ),
         actions: [
+          // 弹幕开关：关掉时图标压暗，不用点开菜单就知道当前状态
+          IconButton(
+            tooltip: _danmakuOn ? '关闭弹幕' : '开启弹幕',
+            onPressed: () => unawaited(_toggleDanmaku()),
+            icon: Icon(
+              _danmakuOn ? Icons.subtitles : Icons.subtitles_off,
+              size: 22,
+              color: _danmakuOn ? Colors.white : Colors.white38,
+            ),
+          ),
           PopupMenuButton<int>(
             tooltip: '清晰度',
             icon: const Icon(Icons.high_quality, size: 22),
@@ -378,6 +406,7 @@ class _BiliVideoPageState extends State<BiliVideoPage> {
                   BiliDanmakuOverlay(
                     clock: _playback.state,
                     bvid: widget.bvid,
+                    enabled: _danmakuOn,
                   ),
                   // 钩子入口的「点击开播」遮罩：这一下点击同时也是浏览器
                   // 认可的用户手势，之后 play() 才不会被拒。
