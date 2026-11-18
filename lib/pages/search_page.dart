@@ -124,8 +124,8 @@ class _SearchPageState extends State<SearchPage> {
     if (kIsWeb && !BiliApi.proxyEnabled) {
       setState(() {
         _biliLoading = false;
-        _biliError = '网页版要经「接口反代」中转才能搜B站。'
-            '地址在 设置 → 哔哩哔哩数据源 → 接口反代 里改。';
+        _biliError = '网页端的检索须经「接口反代」中转。'
+            '地址可在 设置 → 哔哩哔哩数据源 → 接口反代 中修改。';
       });
       return;
     }

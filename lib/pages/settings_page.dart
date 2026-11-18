@@ -58,9 +58,9 @@ class _SettingsPageState extends State<SettingsPage> {
   /// 反代那一行的副标题。三种状态要能一眼分清：
   /// 没配、配了且通、配了但连不上（此时其实在直连）。
   String _proxySummary() {
-    if (biliModel.proxy.isEmpty) return '没填地址 · 直接连B站';
-    if (biliModel.proxyActive) return '${biliModel.proxy} · 通道正常';
-    return '${biliModel.proxy} · 连不上，暂时直连';
+    if (biliModel.proxy.isEmpty) return '通道未配置 · 直连B站';
+    if (biliModel.proxyActive) return '${biliModel.proxy} · 通道畅通';
+    return '${biliModel.proxy} · 通道中断，暂时直连';
   }
 
   Future<void> _editProxy(BuildContext context) async {
@@ -114,7 +114,7 @@ class _SettingsPageState extends State<SettingsPage> {
     final v = value.trim();
     if (v.isNotEmpty && !v.startsWith('http://') && !v.startsWith('https://')) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('地址要以 http:// 或 https:// 开头')),
+        const SnackBar(content: Text('地址须以 http:// 或 https:// 开头')),
       );
       return;
     }
@@ -158,7 +158,7 @@ class _SettingsPageState extends State<SettingsPage> {
       if (!mounted) return;
       if (!ready) {
         messenger.showSnackBar(const SnackBar(
-          content: Text('Shizuku 没给授权，改用「修改系统设置」方式'),
+          content: Text('Shizuku 未授予权限，改由「修改系统设置」处理'),
         ));
       }
     }
@@ -367,8 +367,8 @@ class _SettingsPageState extends State<SettingsPage> {
                   // 默认地址是随包发的，所以这里出现只说明它当前连不通。
                   if (kIsWeb && !biliModel.proxyActive) ...[
                     Text(
-                      '网页端的B站内容全靠『接口反代』中转。现在这个地址连不上，'
-                      '可以在下面换成你自己的。',
+                      '网页端所有B站请求均须经『接口反代』中转。当前节点无响应，'
+                      '可在下方更换为你自己的节点。',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.error,
                         height: 1.5,
@@ -409,7 +409,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     subtitle: Text(
                       session == null
                           ? kIsWeb && !biliModel.proxyActive
-                                ? '反代连不上，网页端暂时登不了'
+                                ? '中转节点无响应，网页端暂无法登录'
                                 : '扫码登录你自己的B站账号'
                           : '已登录 · UID ${session.mid}',
                     ),
@@ -541,7 +541,7 @@ class _SettingsPageState extends State<SettingsPage> {
               'vivo / iQOO 挖孔播放胶囊的白名单开关。OriginOS 4 上加入后'
               '播放时挖孔旁会出现胶囊；OriginOS 5 起系统在代码层另有厂商'
               '白名单（酷狗 / QQ音乐 / 网易云等），写入后不保证生效，'
-              '通知栏媒体通知不受影响。装了 Shizuku 就优先用它（推荐），'
+              '通知栏媒体通知不受影响。装有 Shizuku 时优先由其接管（推荐），'
               '否则需授予「修改系统设置」权限；可随时移出还原。',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
@@ -677,7 +677,7 @@ class _ProxyDialogState extends State<_ProxyDialog>
     if (value.isEmpty) {
       await biliModel.setProxy('');
       if (!mounted) return;
-      Navigator.of(context).pop('反代已关掉 · 回到直连B站');
+      Navigator.of(context).pop('中转已关闭 · 恢复直连B站');
       return;
     }
 
@@ -686,12 +686,12 @@ class _ProxyDialogState extends State<_ProxyDialog>
     if (!ok) {
       setState(() {
         _busy = false;
-        _hint = '这个地址连不上，配置未保存';
+        _hint = '该地址无响应，配置未保存';
         _hintOk = false;
       });
       return;
     }
-    Navigator.of(context).pop('通道接上了，博士');
+    Navigator.of(context).pop('通道已建立，博士');
   }
 
   @override
@@ -706,8 +706,8 @@ class _ProxyDialogState extends State<_ProxyDialog>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '默认地址已经能用；想换成自己的就填在这里，例如 https://bili.example.com。'
-              '它负责补上浏览器发不出的 Cookie 和 Referer。',
+              '默认节点可用；如需更换，填在下方，例如 https://bili.example.com。'
+              '它负责补上浏览器无法发出的 Cookie 与 Referer。',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
                 height: 1.5,

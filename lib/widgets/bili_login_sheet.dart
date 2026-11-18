@@ -314,8 +314,8 @@ class _LoginSheetState extends State<_LoginSheet> {
         if (blockedOnWeb) ...[
           const SizedBox(height: 8),
           Text(
-            '网页端登录要经『接口反代』：浏览器不让页面自带 Cookie 头，'
-            '没有它就用不了。',
+            '网页端登录须经『接口反代』：浏览器不允许页面自带 Cookie 头，'
+            '缺少中转无法完成登录。',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.error,
               height: 1.5,
