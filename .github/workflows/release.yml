@@ -127,16 +127,14 @@ jobs:
           restore-keys: |
             gradle-${{ runner.os }}-
 
-      - name: 构建 Android APK（按 ABI 拆分）
+      - name: 构建 Android APK（通用包）
         if: matrix.target == 'android'
         run: |
-          # 三 ABI 各出一个包：通用包 52MB，拆开后 arm64 只有 18MB。
-          # 现代手机基本都是 arm64-v8a；v7a 给老机器，x86_64 给模拟器。
-          flutter build apk --release --split-per-abi
-          cd build/app/outputs/flutter-apk
-          mv app-arm64-v8a-release.apk   "$GITHUB_WORKSPACE/podencoMusic-android-arm64.apk"
-          mv app-armeabi-v7a-release.apk "$GITHUB_WORKSPACE/podencoMusic-android-armv7a.apk"
-          mv app-x86_64-release.apk      "$GITHUB_WORKSPACE/podencoMusic-android-x86_64.apk"
+          # 一个包同时带 arm64-v8a / armeabi-v7a / x86_64 三套 .so，
+          # 安装时由系统自己挑对应架构，用户不用再选「下哪个」。
+          # 代价是体积翻倍（通用包 ~60MB，拆开时 arm64 只有 32MB）。
+          flutter build apk --release
+          mv build/app/outputs/flutter-apk/app-release.apk "$GITHUB_WORKSPACE/podencoMusic-android.apk"
 
       - name: 构建 Windows
         if: matrix.target == 'windows'
@@ -170,9 +168,7 @@ jobs:
         with:
           name: podencoMusic-${{ matrix.target }}
           path: |
-            podencoMusic-android-arm64.apk
-            podencoMusic-android-armv7a.apk
-            podencoMusic-android-x86_64.apk
+            podencoMusic-android.apk
             podencoMusic-windows.zip
             podencoMusic-linux-x64.tar.gz
             podencoMusic-web.zip
