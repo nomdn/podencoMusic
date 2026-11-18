@@ -80,11 +80,16 @@ jobs:
         if: startsWith(matrix.target, 'linux')
         run: |
           sudo apt-get update
+          # libmpv-dev 是编译期必需：media_kit_video 的 Linux CMakeLists 里
+          # `pkg_check_modules(mpv IMPORTED_TARGET mpv)` 不是 REQUIRED，
+          # 缺 mpv.pc 时它静默失败、不生成 PkgConfig::mpv，随后
+          # target_link_libraries 才报 “target was not found”；
+          # libmpv2 只提供运行时的 libmpv.so.2（Flatpak 收集依赖也要它）。
           sudo apt-get install -y \
             libgtk-3-dev ninja-build pkg-config libayatana-appindicator3-dev \
             libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
             gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav \
-            libmpv2 rpm zstd flatpak flatpak-builder
+            libmpv2 libmpv-dev rpm zstd flatpak flatpak-builder
 
       - name: 拉依赖
         run: flutter pub get
