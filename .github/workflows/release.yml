@@ -289,7 +289,27 @@ jobs:
         run: unzip web-dist/podencoMusic-web.zip -d web-dist
 
       - name: 部署到 EdgeOne Pages
-        run: npx edgeone pages deploy ./web-dist -n podenco-music -t ${{ secrets.EDGEONE_API_TOKEN }}
+        env:
+          EDGEONE_API_TOKEN: ${{ secrets.EDGEONE_API_TOKEN }}
+        run: |
+          # EdgeOne 的 Pages API 会偶发 522（边缘节点等源站超时），
+          # 表现是 DescribePagesProjects 直接失败 —— 跟凭证、项目名都无关，
+          # 隔几十秒再打一次就过。所以这里自己重试，别让它把整次发布拖成红的。
+          for i in 1 2 3; do
+            echo "::group::第 $i 次部署尝试"
+            if npx --yes edgeone pages deploy ./web-dist -n podenco-music -t "$EDGEONE_API_TOKEN"; then
+              echo "::endgroup::"
+              exit 0
+            fi
+            echo "::endgroup::"
+            if [ "$i" -lt 3 ]; then
+              wait=$((i * 20))
+              echo "本次失败，${wait}s 后重试"
+              sleep "$wait"
+            fi
+          done
+          echo "三次部署都失败，判断为真实故障，请到 EdgeOne 控制台确认 Pages 服务状态" >&2
+          exit 1
 
   release:
     # 只有 tag 推送才发 Release；手动触发只构建（产物在 Actions 页下载）
