@@ -36,6 +36,8 @@ jobs:
           - os: ubuntu-latest
             target: web
     runs-on: ${{ matrix.os }}
+    # 兜底：apt/flatpak 卡住时最多耗 40 分钟，别默认拖到 6 小时
+    timeout-minutes: 40
     defaults:
       run:
         shell: bash
@@ -79,13 +81,23 @@ jobs:
       - name: Linux 构建与打包依赖（GTK3 / ninja / ayatana / GStreamer / libmpv / rpm / Flatpak）
         if: startsWith(matrix.target, 'linux')
         run: |
+          # 全程非交互：装 libmpv-dev 会带进 libavcodec/libplacebo 等一堆新库，
+          # Ubuntu runner 上的 needrestart 会因此弹「要重启哪些服务」的对话框，
+          # CI 里没人应答，apt 就一直挂着（实测卡了 17 分钟仍未返回）。
+          export DEBIAN_FRONTEND=noninteractive
+          sudo mkdir -p /etc/needrestart/conf.d
+          echo '$nrconf{restart} = "a";' | sudo tee /etc/needrestart/conf.d/99-ci.conf >/dev/null
+          echo "debconf debconf/frontend select Noninteractive" | sudo debconf-set-selections
+
           sudo apt-get update
           # libmpv-dev 是编译期必需：media_kit_video 的 Linux CMakeLists 里
           # `pkg_check_modules(mpv IMPORTED_TARGET mpv)` 不是 REQUIRED，
           # 缺 mpv.pc 时它静默失败、不生成 PkgConfig::mpv，随后
           # target_link_libraries 才报 “target was not found”；
           # libmpv2 只提供运行时的 libmpv.so.2（Flatpak 收集依赖也要它）。
-          sudo apt-get install -y \
+          sudo -E apt-get install -y \
+            -o Dpkg::Options::=--force-confdef \
+            -o Dpkg::Options::=--force-confold \
             libgtk-3-dev ninja-build pkg-config libayatana-appindicator3-dev \
             libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
             gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav \
