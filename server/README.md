@@ -23,6 +23,15 @@ go build -o biliproxy .
 ./biliproxy                    # 默认监听 :8787
 ```
 
+要部署到 ARM 机器（树莓派、Oracle 免费 ARM 实例、鲲鹏等）就交叉编译，
+纯 Go + `CGO_ENABLED=0`，不需要目标机工具链：
+
+```bash
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o biliproxy-linux-arm64 .
+```
+
+Release 页里 `biliproxy-linux-amd64` 和 `biliproxy-linux-arm64` 都有。
+
 浏览器打开 `http://127.0.0.1:8787/healthz` 应返回：
 
 ```json
@@ -200,6 +209,9 @@ docker run -d -p 8787:8787 \
   -v biliproxy-data:/data \
   --name biliproxy ghcr.io/nomdn/podenco-music-proxy:latest
 ```
+
+镜像是多架构清单（`linux/amd64` + `linux/arm64`），`docker pull` 会按机器架构自动挑，
+ARM 服务器上不用加 `--platform`。
 
 也可本地构建：
 
