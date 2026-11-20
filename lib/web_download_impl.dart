@@ -17,6 +17,7 @@ library;
 import 'dart:async';
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
+import 'dart:typed_data';
 
 /// 一次 Web 下载的取消句柄，包着 AbortController。
 class WebDownloadHandle {
@@ -238,6 +239,46 @@ class WebFsAccess {
       return fileName;
     } catch (_) {
       // 写一半失败 / 被取消：删掉半截文件，别留下看着正常的残缺品
+      await _removeEntry(dir, fileName);
+      rethrow;
+    }
+  }
+
+  /// 把已经在内存里处理好的字节写进授权目录。
+  /// B站音轨要在浏览器里 remux，没法走上面的流式 download → write。
+  Future<String> writeBytes({
+    required String fileName,
+    required Uint8List bytes,
+  }) async {
+    final dir = _dir;
+    if (dir == null || !_granted) {
+      throw Exception('尚未授权下载目录');
+    }
+    late final JSObject fileHandle;
+    try {
+      fileHandle = await (dir.callMethod(
+        'getFileHandle'.toJS,
+        fileName.toJS,
+        JSObject()..setProperty('create'.toJS, true.toJS),
+      ) as JSPromise)
+          .toDart as JSObject;
+    } catch (e) {
+      throw Exception('[getFileHandle] $e');
+    }
+    late final JSObject writable;
+    try {
+      writable = await (fileHandle.callMethod('createWritable'.toJS) as JSPromise)
+          .toDart as JSObject;
+    } catch (e) {
+      await _removeEntry(dir, fileName);
+      throw Exception('[createWritable] $e');
+    }
+    try {
+      await (writable.callMethod('write'.toJS, bytes.toJS) as JSPromise)
+          .toDart;
+      await (writable.callMethod('close'.toJS) as JSPromise).toDart;
+      return fileName;
+    } catch (_) {
       await _removeEntry(dir, fileName);
       rethrow;
     }

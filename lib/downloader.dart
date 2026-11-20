@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:io';
-
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'audio_tags.dart';
 import 'bili_api.dart';
 import 'disk_space.dart';
+import 'fmp4_remux.dart';
 import 'library.dart';
 import 'models.dart';
 import 'static_cache.dart';
@@ -157,8 +158,17 @@ class Downloader extends ChangeNotifier {
     }
   }
 
-  /// 这首歌是不是已经在本地了（判断依据是文件名，不请求网络）
-  bool isDownloaded(Track track) => _downloadedStems.contains(_stemFor(track));
+  /// 这首歌是不是已经在本地了（判断依据是文件名，不请求网络）。
+  /// 兼容老版本生成的「艺人 - 曲名」文件名，否则改名后已下载的老歌
+  /// 会被误判成没下载，用户一刷新就重复下一份。
+  bool isDownloaded(Track track) {
+    final stem = _stemFor(track);
+    if (_downloadedStems.contains(stem)) return true;
+    if (track.artists.isEmpty) return false;
+    return _downloadedStems.contains(
+      _sanitizeStem('${track.artists.first} - ${track.name}'),
+    );
+  }
 
   /// 这首歌要不要下。拆成纯函数是为了单测不用碰实例状态和网络。
   static bool needsDownload(
@@ -353,6 +363,9 @@ class Downloader extends ChangeNotifier {
         headers = null;
       }
       final fileName = '${_stemFor(track)}$extension';
+      // B站 DASH 音轨是 fragmented MP4，落盘前必须重封装成标准 M4A，
+      // 否则系统媒体库读不到时长，华为手表同步/解码都会失败。
+      final needsRemux = track.isBili;
 
       String location;
       if (kIsWeb) {
@@ -362,6 +375,8 @@ class Downloader extends ChangeNotifier {
           sourceUrl: sourceUrl,
           fileName: fileName,
           cid: cid,
+          needsRemux: needsRemux,
+          headers: headers,
         );
       } else {
         // 元数据（歌名/艺人/专辑/封面）组装失败就给 null，下载照常进行。
@@ -383,6 +398,7 @@ class Downloader extends ChangeNotifier {
                 cid: cid,
                 tag: tag,
                 headers: headers,
+                needsRemux: needsRemux,
               )
             : await _saveToFolder(
                 sourceUrl: sourceUrl,
@@ -390,6 +406,7 @@ class Downloader extends ChangeNotifier {
                 cid: cid,
                 tag: tag,
                 headers: headers,
+                needsRemux: needsRemux,
               );
       }
 
@@ -475,18 +492,49 @@ class Downloader extends ChangeNotifier {
     required String sourceUrl,
     required String fileName,
     required String cid,
+    required bool needsRemux,
+    Map<String, String>? headers,
   }) async {
-    final handle = webFs.createDownloadHandle();
-    _webHandles[cid] = handle;
+    if (!needsRemux) {
+      final handle = webFs.createDownloadHandle();
+      _webHandles[cid] = handle;
+      try {
+        return await webFs.writeFileFromUrl(
+          url: sourceUrl,
+          fileName: fileName,
+          handle: handle,
+          onProgress: (progress) => _publishProgress(cid, progress),
+        );
+      } finally {
+        _webHandles.remove(cid);
+      }
+    }
+
+    // B站音轨：浏览器里没法流式 remux，先把字节读进来，转成标准 M4A 再写。
+    // 挂在 _activeClients 上，取消时 close() 会掐断请求。
+    final client = http.Client();
+    _activeClients[cid] = client;
     try {
-      return await webFs.writeFileFromUrl(
-        url: sourceUrl,
-        fileName: fileName,
-        handle: handle,
-        onProgress: (progress) => _publishProgress(cid, progress),
-      );
+      final request = http.Request('GET', Uri.parse(sourceUrl));
+      if (headers != null) request.headers.addAll(headers);
+      final response = await client.send(request);
+      if (response.statusCode != 200) {
+        throw SirenException('归档失败：HTTP ${response.statusCode}');
+      }
+      final total = response.contentLength ?? 0;
+      var received = 0;
+      final buffer = BytesBuilder(copy: false);
+      await for (final chunk in response.stream) {
+        buffer.add(chunk);
+        received += chunk.length;
+        _publishProgress(cid, total > 0 ? received / total : 0);
+      }
+      final bytes = buffer.takeBytes();
+      final normalized = _normalizeBiliBytes(bytes);
+      return await webFs.writeBytes(fileName: fileName, bytes: normalized);
     } finally {
-      _webHandles.remove(cid);
+      _activeClients.remove(cid);
+      client.close();
     }
   }
 
@@ -502,12 +550,14 @@ class Downloader extends ChangeNotifier {
     required String cid,
     AudioTag? tag,
     Map<String, String>? headers,
+    required bool needsRemux,
   }) async {
     final tempDir = await getTemporaryDirectory();
     final temp = File('${tempDir.path}${Platform.pathSeparator}$fileName');
 
     try {
       await _streamTo(sourceUrl, temp, cid, headers: headers);
+      if (needsRemux) await _normalizeBiliFile(temp);
       // MediaStore 拷贝前把标签写进临时文件，入库的才是带元数据的版本
       await _embedTags(temp, tag, fileName);
 
@@ -536,6 +586,7 @@ class Downloader extends ChangeNotifier {
     required String cid,
     AudioTag? tag,
     Map<String, String>? headers,
+    required bool needsRemux,
   }) async {
     final dir = await targetDirectory();
     final target = File('${dir.path}${Platform.pathSeparator}$fileName');
@@ -551,6 +602,7 @@ class Downloader extends ChangeNotifier {
       if (await part.length() < 64 * 1024) {
         throw const SirenException('归档失败：文件不完整');
       }
+      if (needsRemux) await _normalizeBiliFile(part);
       await part.rename(target.path);
       // 改完名再写元数据：标签嵌入失败时，删掉的应该是原音频而不是标签
       await _embedTags(target, tag, fileName);
@@ -665,13 +717,42 @@ class Downloader extends ChangeNotifier {
     }
   }
 
+  /// B站 DASH 音轨重封装。失败只丢「标准容器」这个收益，不丢音频本身：
+  /// 原样返回让下载照常完成，旧设备至少还能在 App 内播。
+  Uint8List _normalizeBiliBytes(Uint8List bytes) {
+    try {
+      return remuxFragmentedMp4(bytes);
+    } catch (e, stack) {
+      debugPrint('[download] fMP4 remux 失败，保留原始音频：$e');
+      debugPrint('$stack');
+      return bytes;
+    }
+  }
+
+  Future<void> _normalizeBiliFile(File file) async {
+    try {
+      final bytes = await file.readAsBytes();
+      final normalized = _normalizeBiliBytes(bytes);
+      if (!identical(normalized, bytes)) {
+        await file.writeAsBytes(normalized);
+      }
+    } catch (e, stack) {
+      debugPrint('[download] 文件 remux 失败，保留原始音频：$e');
+      debugPrint('$stack');
+    }
+  }
+
   // ── 内部 ────────────────────────────────────────────────
 
-  /// 文件名主干：「艺人 - 歌名」。去掉 Windows 不允许的字符。
+  /// 文件名主干的纯函数，方便单测锁定「只保留曲名」这个约定。
+  static String fileStemFor(Track track) => _sanitizeStem(track.name);
+
+  /// 文件名主干：只保留曲名 / 视频标题，不加艺人或 UP 主前缀。
   /// 只依赖 Track，不依赖音频地址，所以扫目录时能直接比对。
-  String _stemFor(Track track) {
-    final artist = track.artists.isEmpty ? '' : track.artists.first;
-    final raw = artist.isEmpty ? track.name : '$artist - ${track.name}';
+  String _stemFor(Track track) => fileStemFor(track);
+
+  /// 文件名清洗：去掉 Windows 不允许的字符，过长截断。
+  static String _sanitizeStem(String raw) {
     final safe = raw
         // Windows 下这九个字符不能出现在文件名里
         .replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')

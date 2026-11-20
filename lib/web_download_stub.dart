@@ -4,6 +4,8 @@
 /// 这里给出的行为只是「保持类型完整」的安全兜底。
 library;
 
+import 'dart:typed_data';
+
 /// 一次 Web 下载的取消句柄。空实现里什么都不做。
 class WebDownloadHandle {
   const WebDownloadHandle();
@@ -39,6 +41,14 @@ class WebFsAccess {
     required String fileName,
     required void Function(double progress) onProgress,
     required WebDownloadHandle handle,
+  }) async {
+    throw UnsupportedError('仅 Web 支持');
+  }
+
+  /// 写入已在内存里处理好的字节。空实现里永远不会被调用。
+  Future<String> writeBytes({
+    required String fileName,
+    required Uint8List bytes,
   }) async {
     throw UnsupportedError('仅 Web 支持');
   }

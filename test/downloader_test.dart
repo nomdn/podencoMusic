@@ -8,6 +8,39 @@ import 'package:podenco_music/models.dart';
 void main() {
   const track = Track(cid: '1', name: 'Your Star', albumCid: '0256', artists: []);
 
+  group('文件名主干', () {
+    test('塞壬曲目只保留曲名，不加「塞壬唱片-MSR」前缀', () {
+      final track = Track(
+        cid: '1',
+        name: 'Your Star',
+        albumCid: '0256',
+        artists: const ['塞壬唱片-MSR'],
+      );
+      expect(Downloader.fileStemFor(track), 'Your Star');
+    });
+
+    test('B站曲目只保留视频标题，不加 UP 主前缀', () {
+      final track = Track(
+        cid: 'BV1ZVsn6nEMn',
+        name: '每日一歌',
+        albumCid: '',
+        artists: const ['某UP主'],
+        source: TrackSource.bilibili,
+      );
+      expect(Downloader.fileStemFor(track), '每日一歌');
+    });
+
+    test('Windows 非法字符仍会替换', () {
+      final track = Track(
+        cid: '1',
+        name: 'a/b:c*d',
+        albumCid: '',
+        artists: const [],
+      );
+      expect(Downloader.fileStemFor(track), 'a_b_c_d');
+    });
+  });
+
   group('needsDownload', () {
     test('没下过、没任务 → 要下', () {
       expect(
