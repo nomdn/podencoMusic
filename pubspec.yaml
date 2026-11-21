@@ -1,5 +1,5 @@
 name: podenco_music
-description: "A new Flutter project."
+description: "塞壬唱片与B站音乐播放器：在线听歌、看歌词、下载歌曲，支持视频弹幕"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev

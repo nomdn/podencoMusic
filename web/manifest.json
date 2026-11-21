@@ -5,7 +5,7 @@
     "display": "standalone",
     "background_color": "#FDFAF4",
     "theme_color": "#E8B33C",
-    "description": "塞壬唱片非官方客户端",
+    "description": "塞壬唱片与B站音乐播放器，支持歌词和下载",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

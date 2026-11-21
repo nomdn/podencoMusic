@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.mint" "\0"
-            VALUE "FileDescription", "podenco_music" "\0"
+            VALUE "FileDescription", "Podenco Music - 塞壬唱片与B站音乐播放器" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "podenco_music" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.mint. All rights reserved." "\0"
             VALUE "OriginalFilename", "podenco_music.exe" "\0"
-            VALUE "ProductName", "podencomusic" "\0"
+            VALUE "ProductName", "Podenco Music" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END
