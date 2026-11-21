@@ -572,8 +572,11 @@ class Downloader extends ChangeNotifier {
       // 设备识别靠的是文件内标签，不是 MediaStore 的 TITLE / ARTIST 两列。
       // 只有原生 Android 音乐库会读那两列；华为音乐走自己的扫描，
       // 手表侧的歌曲信息是经 com.android.mediacenter.healthprovider
-      // 从华为音乐取的，那两列对它完全无效。华为音乐读不到标签时
-      // 退回文件名（所以 WAV 还能显示曲名，但歌手是空的）。
+      // 从华为音乐取的，那两列对它完全无效。
+      //
+      // MP3 的 ID3v2 能被正常读到——不写标签就认不出来。WAV 不一样：
+      // Android 媒体框架对 WAV 的标签（LIST/INFO 与 id3 块）没有统一解析，
+      // 写了也读不到，只剩文件名兜底成曲名、歌手为空。
       await _embedTags(temp, tag, fileName);
 
       final location = await MusicStore.save(
