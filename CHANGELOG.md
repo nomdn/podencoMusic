@@ -6,6 +6,13 @@
 
 ## [Unreleased]
 
+### Added
+- 下载歌曲时写入艺人元数据：M4A 写入曲名与 UP 主，MediaStore 同步写入 TITLE / ARTIST 两列，手表不再显示 Unknown。
+
+### Fixed
+- WAV 同时写入 RIFF `LIST/INFO` 和 `id3 ` 两个标签块，兼容不同的播放器。
+- 重写 WAV 容器，清掉塞壬文件自带的空 INFO；此前解析器先读到空块会判定整首歌没有标签。
+
 ## [1.1.6] - 2026-11-21
 
 ### Fixed
