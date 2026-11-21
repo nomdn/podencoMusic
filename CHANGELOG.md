@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [1.1.7] - 2026-11-21
+
 ### Added
 - 下载歌曲时写入艺人元数据：M4A 写入曲名与 UP 主，MediaStore 同步写入 TITLE / ARTIST 两列，手表不再显示 Unknown。
 
@@ -143,7 +145,8 @@
 - 项目初始化。
 - 双平台自动构建与 Release 发布流水线。
 
-[Unreleased]: https://github.com/nomdn/podencoMusic/compare/v1.1.6...HEAD
+[Unreleased]: https://github.com/nomdn/podencoMusic/compare/v1.1.7...HEAD
+[1.1.7]: https://github.com/nomdn/podencoMusic/compare/v1.1.6...v1.1.7
 [1.1.6]: https://github.com/nomdn/podencoMusic/compare/v1.1.5...v1.1.6
 [1.1.5]: https://github.com/nomdn/podencoMusic/compare/v1.1.4...v1.1.5
 [1.1.4]: https://github.com/nomdn/podencoMusic/compare/v1.1.3...v1.1.4
