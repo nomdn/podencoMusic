@@ -5,7 +5,7 @@
     "display": "standalone",
     "background_color": "#FDFAF4",
     "theme_color": "#E8B33C",
-    "description": "唱片在此。声音，也在此。塞壬，与B站。",
+    "description": "塞壬的唱片，B站的声音。唱片在此，声音，也在此。",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
