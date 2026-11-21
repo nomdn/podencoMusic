@@ -15,6 +15,9 @@ List<TestBox> boxes(List<int> b, [int start = 0, int? end]) {
   var cursor = start;
   while (cursor + 8 <= end) {
     final size = u32(b, cursor);
+    // 坏数据里 size 可能是 0 或小于盒子头，cursor 不前进就会死循环，
+    // 把整个 flutter test 进程挂住（CI 里表现为 job 被 cancel）。
+    if (size < 8 || cursor + size > end) break;
     result.add(TestBox(fourCC(b, cursor + 4), cursor, size, cursor + 8));
     cursor += size;
   }
@@ -195,7 +198,8 @@ void main() {
     final moovBoxes = boxes(output, moov.payload, moov.end);
     final udta = find(moovBoxes, 'udta');
     final meta = find(boxes(output, udta.payload, udta.end), 'meta');
-    final metaBoxes = boxes(output, meta.payload, meta.end);
+    // meta 是 fullbox：头 8 字节之后还有 version+flags(4)，子盒从 +4 起。
+    final metaBoxes = boxes(output, meta.payload + 4, meta.end);
     final ilst = find(metaBoxes, 'ilst');
 
     // ilst 里的每个 item 是 4 字节 atom id + data 盒；data 的 payload 前 4 字节
@@ -204,8 +208,10 @@ void main() {
     expect(items.map((b) => b.type), containsAll(<String>['©nam', '©ART']));
 
     String atomValue(TestBox item) {
-      final data = boxes(output, item.start + 4, item.end).single;
-      return utf8.decode(output.sublist(data.payload + 4, data.end));
+      // item 是标准 box：size(4) + type(4) + data box。data 从 payload 起。
+      final data = boxes(output, item.payload, item.end).single;
+      // data 是 fullbox：再跳 version+flags(4) + locale(4) 才是 UTF-8 文本。
+      return utf8.decode(output.sublist(data.payload + 8, data.end));
     }
 
     expect(atomValue(items.firstWhere((b) => b.type == '©nam')), '测试曲名');

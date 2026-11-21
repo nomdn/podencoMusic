@@ -37,4 +37,7 @@ jobs:
         run: flutter analyze
 
       - name: 单元测试
+        # 5 分钟兜底：某个测试挂住时（比如死循环、无超时的网络请求），
+        # 别让 job 一直耗到 GitHub 默认的 6 小时才被 cancel。
+        timeout-minutes: 5
         run: flutter test

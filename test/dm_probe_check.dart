@@ -1,4 +1,7 @@
 // 临时探针：BV18t421n7cq 的 mode 分布 + 目标弹幕的原始字段。
+// 文件名不带 _test 后缀，flutter test 不会自动收它；需要时手动跑：
+//   flutter test test/dm_probe_check.dart
+// 它发真实网络请求且无超时，放在自动套件里会在网络差时把整个 job 挂住。
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
