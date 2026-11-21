@@ -115,8 +115,15 @@ Future<Uint8List> _readHead(File file, int count) async {
   }
 }
 
-/// WAV：把 ID3v2 包进 RIFF `id3 ` 块追加到文件尾，并修正 RIFF 长度
-/// 字段（偏移 4 的 LE DWORD = 文件总长 - 8）。写入后 RIFF 结构依然合法。
+/// WAV：追加 RIFF `LIST/INFO` 与 `id3 ` 两个块，再修正 RIFF 长度字段
+/// （偏移 4 的 LE DWORD = 文件总长 - 8）。写入后 RIFF 结构依然合法。
+///
+/// 为什么两份都写：WAV 没有统一的标签标准，不同播放器各读各的。
+///   · `LIST/INFO`（INAM / IART / IPRD）是 RIFF 原生写法，Windows、
+///     不少播放器与部分 Android 解析器认这个；
+///   · `id3 ` 块是安卓系播放器的常见做法，和 MP3 那份 ID3v2.3 是同一批字节。
+/// 实测华为手表对只带 `id3 ` 块的 WAV 仍显示未知，所以补一份 INFO ——
+/// 它读哪个都行，最差也能多一条线索。
 Future<void> writeWavTags(File file, AudioTag tag) async {
   // 只处理真 WAV：头 12 字节必须是 RIFF....WAVE
   final raf = await file.open(mode: FileMode.append);
@@ -132,6 +139,8 @@ Future<void> writeWavTags(File file, AudioTag tag) async {
 
     final tagBytes = buildId3v2(tag);
     final chunk = BytesBuilder();
+    final info = _riffInfoChunk(tag);
+    if (info != null) chunk.add(info);
     chunk.add(ascii.encode('id3 '));
     chunk.add(_le32(tagBytes.length));
     chunk.add(tagBytes);
@@ -148,6 +157,42 @@ Future<void> writeWavTags(File file, AudioTag tag) async {
   } finally {
     await raf.close();
   }
+}
+
+/// 把 AudioTag 拼成 RIFF 的 `LIST`/`INFO` 块；没有任何可用字段时返回 null。
+///
+/// 子块格式：4 字节 ID + 4 字节 LE 长度 + 以 0 结尾的字符串，奇数长度补 pad。
+/// 文本按 UTF-8 写 —— INFO 名义上是 ANSI，但塞壬大量中文，写 GBK 只会更糟；
+/// 读得懂 UTF-8 的解析器能正确显示，读不懂的至少 ASCII 部分还在。
+Uint8List? _riffInfoChunk(AudioTag tag) {
+  final subs = BytesBuilder();
+  var count = 0;
+
+  void add(String id, String value) {
+    final v = value.trim();
+    if (v.isEmpty) return;
+    final body = <int>[...utf8.encode(v), 0x00];
+    subs.add(ascii.encode(id));
+    subs.add(_le32(body.length));
+    subs.add(body);
+    if (body.length.isOdd) subs.add([0x00]);
+    count++;
+  }
+
+  add('INAM', tag.title);
+  add('IART', tag.artist);
+  add('IPRD', tag.album ?? '');
+  if (count == 0) return null;
+
+  final body = subs.toBytes();
+  final out = BytesBuilder();
+  out.add(ascii.encode('LIST'));
+  // LIST 的长度 = 'INFO' 四个字节 + 所有子块（含各自的 pad）
+  out.add(_le32(body.length + 4));
+  out.add(ascii.encode('INFO'));
+  out.add(body);
+  if ((body.length + 4).isOdd) out.add([0x00]);
+  return out.toBytes();
 }
 
 /// 单个帧：帧 ID(4) + 大端长度(4) + 标志(2) + 内容。
