@@ -12,3 +12,6 @@ GeneratedPluginRegistrant.java
 key.properties
 **/*.keystore
 **/*.jks
+# 固定签名库是故意提交的：CI 每次全新 runner，用随机 debug keystore 会导致
+# 每次发版签名不同、用户无法覆盖安装。私钥公开是已知取舍（详见 build.gradle.kts）。
+!app/podenco-signing.jks

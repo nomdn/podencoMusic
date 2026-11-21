@@ -14,6 +14,19 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    // 固定签名：release 用仓库里的 keystore，而不是各机器 ~/.android/debug.keystore。
+    // GitHub Actions 每次都是全新 runner，debug keystore 会重新生成，导致每次发版签名不同、
+    // 用户覆盖安装时报「签名冲突」。这里的证书与已发布的 v1.1.7 完全一致，老用户可以覆盖升级。
+    // 注意：私钥随仓库公开，任何人都能用它签同名包；要上应用商店请换正式密钥 + Secrets。
+    signingConfigs {
+        create("release") {
+            storeFile = file("podenco-signing.jks")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.mint.podencomusic"
@@ -31,9 +44,7 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 }
