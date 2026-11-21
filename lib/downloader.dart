@@ -569,22 +569,18 @@ class Downloader extends ChangeNotifier {
       // MediaStore 拷贝前把标签写进临时文件，入库的才是带元数据的版本。
       // B站 M4A 的 ilst 已在 remux 时写入，_embedTags 对它不做任何事。
       //
-      // 设备识别靠的是文件内标签，不是 MediaStore 的 TITLE / ARTIST 两列。
-      // 只有原生 Android 音乐库会读那两列；华为音乐走自己的扫描，
-      // 手表侧的歌曲信息是经 com.android.mediacenter.healthprovider
-      // 从华为音乐取的，那两列对它完全无效。
+      // 标签只写进文件，不写 MediaStore 的 TITLE / ARTIST：那两列会在
+      // 媒体扫描时被文件标签回填覆盖，插入时写的值留不住。设备最终
+      // 看到什么，取决于文件里有什么标签。
       //
-      // MP3 的 ID3v2 能被正常读到——不写标签就认不出来。WAV 不一样：
-      // Android 媒体框架对 WAV 的标签（LIST/INFO 与 id3 块）没有统一解析，
-      // 写了也读不到，只剩文件名兜底成曲名、歌手为空。
+      // MP3 的 ID3v2 能被系统解析；WAV 的 LIST/INFO 与 id3 块不能，
+      // 所以 WAV 在音乐库里只有文件名兜底成曲名、歌手为空。
       await _embedTags(temp, tag, fileName);
 
       final location = await MusicStore.save(
         sourcePath: temp.path,
         fileName: fileName,
         mimeType: mimeType,
-        title: tag?.title,
-        artist: tag?.artist,
       );
       if (location == null) {
         throw const SirenException('归档至音乐库失败');

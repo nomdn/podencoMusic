@@ -19,20 +19,20 @@ class MusicStore {
   ///
   /// 成功返回 content:// URI（Android 10+）或绝对路径（9 及以下）。
   /// 权限被拒会抛 PlatformException，code 是 permission_denied。
+  ///
+  /// 只写路径与 MIME，不写 TITLE / ARTIST：那两列会被系统媒体扫描
+  /// 用文件标签覆盖掉，写了也留不住。设备看到的元数据最终都来自
+  /// 文件内嵌标签。
   static Future<String?> save({
     required String sourcePath,
     required String fileName,
     required String mimeType,
-    String? title,
-    String? artist,
   }) async {
     if (!isSupported) return null;
     return _channel.invokeMethod<String>('saveToMusic', {
       'path': sourcePath,
       'fileName': fileName,
       'mimeType': mimeType,
-      'title': ?title,
-      'artist': ?artist,
     });
   }
 
