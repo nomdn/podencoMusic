@@ -115,18 +115,50 @@ Future<Uint8List> _readHead(File file, int count) async {
   }
 }
 
-/// WAV：追加 RIFF `LIST/INFO` 与 `id3 ` 两个块，再修正 RIFF 长度字段
-/// （偏移 4 的 LE DWORD = 文件总长 - 8）。写入后 RIFF 结构依然合法。
+/// RIFF 里的一个块（记下它在原文件里的位置，搬运时按区间流式拷贝）。
+class _WavChunk {
+  const _WavChunk({
+    required this.id,
+    required this.start,
+    required this.size,
+    this.listType,
+  });
+
+  final String id;
+
+  /// 块头（8 字节）在原文件里的起始偏移。
+  final int start;
+
+  /// 块体长度（不含块头，也不含 pad）。
+  final int size;
+
+  /// 仅 `LIST` 块有意义：块体前 4 字节的类型标识，如 `INFO`。
+  final String? listType;
+
+  /// 整个块占用的字节数，含块头与奇数字节的 pad。
+  int get total => 8 + size + (size.isOdd ? 1 : 0);
+}
+
+/// WAV：重写整个 RIFF 容器 —— 扒掉原来所有的 `LIST/INFO` 与 `id3 ` 块，
+/// 再把新的两份标签追加到末尾，最后修正 RIFF 长度字段
+/// （偏移 4 的 LE DWORD = 文件总长 - 8）。
+///
+/// 为什么是「重写」而不是「追加」：塞壬 CDN 上的 WAV 自带一个**空的**
+/// `LIST/INFO`（只有 4 字节 `INFO`，没有任何子块）。以前直接在文件尾追加
+/// 第二个 INFO，解析器按顺序读到第一个、发现是空的，就当这首歌没有标签 ——
+/// 于是手表永远显示未知。现在把旧的扒掉再写，全文件只留一份。
 ///
 /// 为什么两份都写：WAV 没有统一的标签标准，不同播放器各读各的。
 ///   · `LIST/INFO`（INAM / IART / IPRD）是 RIFF 原生写法，Windows、
 ///     不少播放器与部分 Android 解析器认这个；
 ///   · `id3 ` 块是安卓系播放器的常见做法，和 MP3 那份 ID3v2.3 是同一批字节。
-/// 实测华为手表对只带 `id3 ` 块的 WAV 仍显示未知，所以补一份 INFO ——
-/// 它读哪个都行，最差也能多一条线索。
 Future<void> writeWavTags(File file, AudioTag tag) async {
-  // 只处理真 WAV：头 12 字节必须是 RIFF....WAVE
-  final raf = await file.open(mode: FileMode.append);
+  final total = await file.length();
+  final chunks = <_WavChunk>[];
+
+  // 第一遍：只读块头，把整条块链摸清（几十 MB 的 data 块不碰）
+  var tailStart = -1;
+  final raf = await file.open();
   try {
     await raf.setPosition(0);
     final head = await raf.read(12);
@@ -137,25 +169,79 @@ Future<void> writeWavTags(File file, AudioTag tag) async {
       throw const FormatException('不是 RIFF/WAVE 文件');
     }
 
-    final tagBytes = buildId3v2(tag);
-    final chunk = BytesBuilder();
-    final info = _riffInfoChunk(tag);
-    if (info != null) chunk.add(info);
-    chunk.add(ascii.encode('id3 '));
-    chunk.add(_le32(tagBytes.length));
-    chunk.add(tagBytes);
-    // RIFF 块要 2 字节对齐：奇数长度补一个 pad 字节（不计入块大小）
-    if (tagBytes.length.isOdd) chunk.add([0x00]);
+    var off = 12;
+    while (off + 8 <= total) {
+      await raf.setPosition(off);
+      final hdr = await raf.read(8);
+      if (hdr.length < 8) break;
+      final id = String.fromCharCodes(hdr.sublist(0, 4));
+      final size = hdr[4] | (hdr[5] << 8) | (hdr[6] << 16) | (hdr[7] << 24);
+      // 块长度撒谎或文件被截断：剩下的字节一律当成不透明尾巴原样搬走。
+      // 宁可不知道里面是什么，也不能凭一个错长度把音频数据丢掉。
+      if (size < 0 || off + 8 + size > total) break;
 
-    await raf.setPosition(file.lengthSync());
-    await raf.writeFrom(chunk.toBytes());
-
-    // 修正 RIFF 长度字段：此时 raf.length() 已包含 pad 字节
-    final newSize = await raf.length() - 8;
-    await raf.setPosition(4);
-    await raf.writeFrom(_le32(newSize));
+      String? listType;
+      if (id == 'LIST') {
+        await raf.setPosition(off + 8);
+        final t = await raf.read(4);
+        if (t.length == 4) listType = String.fromCharCodes(t);
+      }
+      chunks.add(_WavChunk(id: id, start: off, size: size, listType: listType));
+      off += 8 + size + (size.isOdd ? 1 : 0);
+    }
+    if (off < total) tailStart = off;
   } finally {
     await raf.close();
+  }
+
+  final kept = chunks
+      .where((c) => c.id != 'id3 ' && !(c.id == 'LIST' && c.listType == 'INFO'))
+      .toList();
+
+  final info = _riffInfoChunk(tag);
+  final tagBytes = buildId3v2(tag);
+  final id3 = BytesBuilder();
+  id3.add(ascii.encode('id3 '));
+  id3.add(_le32(tagBytes.length));
+  id3.add(tagBytes);
+  // RIFF 块要 2 字节对齐：奇数长度补一个 pad 字节（不计入块大小）
+  if (tagBytes.length.isOdd) id3.add([0x00]);
+  final id3Bytes = id3.toBytes();
+
+  // 第二遍：流式搬到临时文件，data 块整段过一遍但不进内存
+  final tmp = File('${file.path}.tagtmp');
+  final sink = tmp.openWrite();
+  try {
+    sink.add(ascii.encode('RIFF'));
+    sink.add(_le32(0)); // 长度字段占位，写完回填
+    sink.add(ascii.encode('WAVE'));
+    for (final c in kept) {
+      await sink.addStream(file.openRead(c.start, c.start + c.total));
+    }
+    // 解析中断的位置之后原样搬过去，音频一个字节都不少
+    if (tailStart >= 0 && tailStart < total) {
+      await sink.addStream(file.openRead(tailStart, total));
+    }
+    if (info != null) sink.add(info);
+    sink.add(id3Bytes);
+    await sink.flush();
+    await sink.close();
+
+    final out = await tmp.open(mode: FileMode.append);
+    try {
+      // 用真实落盘长度回填，比累加计数稳
+      final newSize = await out.length() - 8;
+      await out.setPosition(4);
+      await out.writeFrom(_le32(newSize));
+    } finally {
+      await out.close();
+    }
+    await tmp.rename(file.path);
+  } catch (_) {
+    try {
+      if (await tmp.exists()) await tmp.delete();
+    } catch (_) {}
+    rethrow;
   }
 }
 
