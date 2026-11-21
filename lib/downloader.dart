@@ -568,6 +568,12 @@ class Downloader extends ChangeNotifier {
       if (needsRemux) await _normalizeBiliFile(temp, tag: tag);
       // MediaStore 拷贝前把标签写进临时文件，入库的才是带元数据的版本。
       // B站 M4A 的 ilst 已在 remux 时写入，_embedTags 对它不做任何事。
+      //
+      // 设备识别靠的是文件内标签，不是 MediaStore 的 TITLE / ARTIST 两列。
+      // 只有原生 Android 音乐库会读那两列；华为音乐走自己的扫描，
+      // 手表侧的歌曲信息是经 com.android.mediacenter.healthprovider
+      // 从华为音乐取的，那两列对它完全无效。华为音乐读不到标签时
+      // 退回文件名（所以 WAV 还能显示曲名，但歌手是空的）。
       await _embedTags(temp, tag, fileName);
 
       final location = await MusicStore.save(

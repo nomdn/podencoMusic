@@ -6,6 +6,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- WAV 的 `LIST/INFO` 与 `id3 ` 标签块改插到 `data` 之前。原先追加在文件尾，只在 `data` 前扫标签的解析器读不到；ffprobe 这类会走完整条块链，容易造成「本地验证通过、设备上读不到」的误判。
+
 ## [1.1.8] - 2026-11-21
 
 ### Added
@@ -20,7 +23,7 @@
 ## [1.1.7] - 2026-11-21
 
 ### Added
-- 下载歌曲时写入艺人元数据：M4A 写入曲名与 UP 主，MediaStore 同步写入 TITLE / ARTIST 两列，手表不再显示 Unknown。
+- 下载歌曲时写入艺人元数据：M4A 写入曲名与 UP 主，MediaStore 同步写入 TITLE / ARTIST 两列，系统音乐库与文件管理器能显示曲名和艺人。
 
 ### Fixed
 - WAV 同时写入 RIFF `LIST/INFO` 和 `id3 ` 两个标签块，兼容不同的播放器。

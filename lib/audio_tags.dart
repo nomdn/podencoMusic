@@ -140,13 +140,18 @@ class _WavChunk {
 }
 
 /// WAV：重写整个 RIFF 容器 —— 扒掉原来所有的 `LIST/INFO` 与 `id3 ` 块，
-/// 再把新的两份标签追加到末尾，最后修正 RIFF 长度字段
+/// 再把新的两份标签插到 `data` 块**之前**，最后修正 RIFF 长度字段
 /// （偏移 4 的 LE DWORD = 文件总长 - 8）。
+///
+/// 为什么插在 data 之前而不是追加到文件尾：不少解析器（含部分 Android
+/// 与嵌入式播放器）遍历 chunk 时读到 `data` 就认为元数据区结束，
+/// 不再往后扫。ffprobe 这类会走完整条块链，所以追加在尾部它们照样能读，
+/// 容易造成「本地验证通过、设备上读不到」的假象。放前面两种解析器都能命中。
 ///
 /// 为什么是「重写」而不是「追加」：塞壬 CDN 上的 WAV 自带一个**空的**
 /// `LIST/INFO`（只有 4 字节 `INFO`，没有任何子块）。以前直接在文件尾追加
 /// 第二个 INFO，解析器按顺序读到第一个、发现是空的，就当这首歌没有标签 ——
-/// 于是手表永远显示未知。现在把旧的扒掉再写，全文件只留一份。
+/// 于是设备永远显示未知。现在把旧的扒掉再写，全文件只留一份。
 ///
 /// 为什么两份都写：WAV 没有统一的标签标准，不同播放器各读各的。
 ///   · `LIST/INFO`（INAM / IART / IPRD）是 RIFF 原生写法，Windows、
@@ -211,19 +216,29 @@ Future<void> writeWavTags(File file, AudioTag tag) async {
   // 第二遍：流式搬到临时文件，data 块整段过一遍但不进内存
   final tmp = File('${file.path}.tagtmp');
   final sink = tmp.openWrite();
+  var inserted = false;
   try {
     sink.add(ascii.encode('RIFF'));
     sink.add(_le32(0)); // 长度字段占位，写完回填
     sink.add(ascii.encode('WAVE'));
     for (final c in kept) {
+      // 标签插在 data 之前：只扫到 data 就收手的解析器也能读到
+      if (!inserted && c.id == 'data') {
+        if (info != null) sink.add(info);
+        sink.add(id3Bytes);
+        inserted = true;
+      }
       await sink.addStream(file.openRead(c.start, c.start + c.total));
     }
     // 解析中断的位置之后原样搬过去，音频一个字节都不少
     if (tailStart >= 0 && tailStart < total) {
       await sink.addStream(file.openRead(tailStart, total));
     }
-    if (info != null) sink.add(info);
-    sink.add(id3Bytes);
+    // 没有 data 块（文件异常或已被截断）时仍要把标签写进去
+    if (!inserted) {
+      if (info != null) sink.add(info);
+      sink.add(id3Bytes);
+    }
     await sink.flush();
     await sink.close();
 
