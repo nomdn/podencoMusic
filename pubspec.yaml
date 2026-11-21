@@ -1,5 +1,5 @@
 name: podenco_music
-description: "塞壬唱片与B站的播放器。唱片不会自己响，要有人把唱针放下去。这里收着曲目、歌词、视频与弹幕"
+description: "塞壬唱片与B站的音乐播放器，支持歌词、弹幕和下载"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
