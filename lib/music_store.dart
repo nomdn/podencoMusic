@@ -23,12 +23,16 @@ class MusicStore {
     required String sourcePath,
     required String fileName,
     required String mimeType,
+    String? title,
+    String? artist,
   }) async {
     if (!isSupported) return null;
     return _channel.invokeMethod<String>('saveToMusic', {
       'path': sourcePath,
       'fileName': fileName,
       'mimeType': mimeType,
+      'title': ?title,
+      'artist': ?artist,
     });
   }
 

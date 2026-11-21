@@ -367,29 +367,36 @@ class Downloader extends ChangeNotifier {
       // 否则系统媒体库读不到时长，华为手表同步/解码都会失败。
       final needsRemux = track.isBili;
 
+      // 元数据组装失败就给 null，下载照常进行。
+      // B站走 ilst（remux 时写 ©nam/©ART），只需要标题和艺人，不下封面；
+      // 塞壬走 ID3/WAV，专辑/封面由 _tagFor 补全。
+      AudioTag? tag;
+      if (track.isBili) {
+        tag = AudioTag(
+          title: track.name,
+          artist: track.artists.isEmpty ? 'B站' : track.artists.join(' / '),
+        );
+      } else if (extension == '.mp3' || extension == '.wav') {
+        try {
+          tag = await _tagFor(track);
+        } catch (e) {
+          debugPrint('[download] 元数据组装失败：$e');
+        }
+      }
+
       String location;
       if (kIsWeb) {
-        // Web：fetch 流式读 + File System Access 流式写。没法嵌标签
-        //（ID3 / WAV 头重排需要整文件重写），先存纯净音频。
+        // Web：fetch 流式读 + File System Access 流式写。
+        // B站的 ilst 在 remux 那一并写入字节，不需要单独嵌标签。
         location = await _saveToWeb(
           sourceUrl: sourceUrl,
           fileName: fileName,
           cid: cid,
           needsRemux: needsRemux,
           headers: headers,
+          tag: tag,
         );
       } else {
-        // 元数据（歌名/艺人/专辑/封面）组装失败就给 null，下载照常进行。
-        // m4a 写不了标签，就别白跑一趟去下封面了。
-        AudioTag? tag;
-        if (extension == '.mp3' || extension == '.wav') {
-          try {
-            tag = await _tagFor(track);
-          } catch (e) {
-            debugPrint('[download] 元数据组装失败：$e');
-          }
-        }
-
         location = MusicStore.isSupported
             ? await _saveToAndroidMusic(
                 sourceUrl: sourceUrl,
@@ -494,6 +501,7 @@ class Downloader extends ChangeNotifier {
     required String cid,
     required bool needsRemux,
     Map<String, String>? headers,
+    AudioTag? tag,
   }) async {
     if (!needsRemux) {
       final handle = webFs.createDownloadHandle();
@@ -530,7 +538,7 @@ class Downloader extends ChangeNotifier {
         _publishProgress(cid, total > 0 ? received / total : 0);
       }
       final bytes = buffer.takeBytes();
-      final normalized = _normalizeBiliBytes(bytes);
+      final normalized = _normalizeBiliBytes(bytes, tag: tag);
       return await webFs.writeBytes(fileName: fileName, bytes: normalized);
     } finally {
       _activeClients.remove(cid);
@@ -557,14 +565,17 @@ class Downloader extends ChangeNotifier {
 
     try {
       await _streamTo(sourceUrl, temp, cid, headers: headers);
-      if (needsRemux) await _normalizeBiliFile(temp);
-      // MediaStore 拷贝前把标签写进临时文件，入库的才是带元数据的版本
+      if (needsRemux) await _normalizeBiliFile(temp, tag: tag);
+      // MediaStore 拷贝前把标签写进临时文件，入库的才是带元数据的版本。
+      // B站 M4A 的 ilst 已在 remux 时写入，_embedTags 对它不做任何事。
       await _embedTags(temp, tag, fileName);
 
       final location = await MusicStore.save(
         sourcePath: temp.path,
         fileName: fileName,
         mimeType: mimeType,
+        title: tag?.title,
+        artist: tag?.artist,
       );
       if (location == null) {
         throw const SirenException('归档至音乐库失败');
@@ -602,7 +613,7 @@ class Downloader extends ChangeNotifier {
       if (await part.length() < 64 * 1024) {
         throw const SirenException('归档失败：文件不完整');
       }
-      if (needsRemux) await _normalizeBiliFile(part);
+      if (needsRemux) await _normalizeBiliFile(part, tag: tag);
       await part.rename(target.path);
       // 改完名再写元数据：标签嵌入失败时，删掉的应该是原音频而不是标签
       await _embedTags(target, tag, fileName);
@@ -719,9 +730,13 @@ class Downloader extends ChangeNotifier {
 
   /// B站 DASH 音轨重封装。失败只丢「标准容器」这个收益，不丢音频本身：
   /// 原样返回让下载照常完成，旧设备至少还能在 App 内播。
-  Uint8List _normalizeBiliBytes(Uint8List bytes) {
+  Uint8List _normalizeBiliBytes(Uint8List bytes, {AudioTag? tag}) {
     try {
-      return remuxFragmentedMp4(bytes);
+      return remuxFragmentedMp4(
+        bytes,
+        title: tag?.title,
+        artist: tag?.artist,
+      );
     } catch (e, stack) {
       debugPrint('[download] fMP4 remux 失败，保留原始音频：$e');
       debugPrint('$stack');
@@ -729,10 +744,10 @@ class Downloader extends ChangeNotifier {
     }
   }
 
-  Future<void> _normalizeBiliFile(File file) async {
+  Future<void> _normalizeBiliFile(File file, {AudioTag? tag}) async {
     try {
       final bytes = await file.readAsBytes();
-      final normalized = _normalizeBiliBytes(bytes);
+      final normalized = _normalizeBiliBytes(bytes, tag: tag);
       if (!identical(normalized, bytes)) {
         await file.writeAsBytes(normalized);
       }

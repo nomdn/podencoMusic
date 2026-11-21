@@ -11,6 +11,7 @@
 /// 塞壬的 WAV 不走这条路。
 library;
 
+import 'dart:convert';
 import 'dart:typed_data';
 
 class Fmp4RemuxException implements Exception {
@@ -57,7 +58,15 @@ class _Fragment {
 
 /// 输入是完整的 fMP4 字节。
 /// 如果发现输入本来就是标准 MP4（没有 `moof`），原样返回，方便重复调用。
-Uint8List remuxFragmentedMp4(Uint8List input) {
+///
+/// [title] / [artist] 写入 Apple/iTunes 风格的 `udta/meta/ilst` 标签。
+/// 华为运动健康在 Android 上用 `MediaMetadataRetriever` 读 TITLE/ARTIST，
+/// M4A 没有 ilst 时会兜底成 "Unknown"，所以 B站下载必须带上艺人。
+Uint8List remuxFragmentedMp4(
+  Uint8List input, {
+  String? title,
+  String? artist,
+}) {
   final top = _boxes(input, 0, input.length);
   final moofExists = top.any((box) => box.type == 'moof');
   if (!moofExists) return input;
@@ -197,9 +206,11 @@ Uint8List remuxFragmentedMp4(Uint8List input) {
     newMdia,
   ]);
   final mvhdVersion = input[mvhd.payloadStart];
+  final tags = _buildIlst(title: title, artist: artist);
   final newMoov = _box('moov', <Uint8List>[
     _patchDuration(input, mvhd, mvhdVersion, movieDuration),
     newTrak,
+    if (tags != null) _box('udta', <Uint8List>[tags]),
   ]);
 
   final output = BytesBuilder(copy: false)
@@ -313,6 +324,50 @@ Uint8List _fullBox(String type, int version, int flags, List<int> payload) {
     ]),
     Uint8List.fromList(payload),
   ]);
+}
+
+// ── Apple / iTunes 风格标签（udta/meta/ilst）─────────────────
+//
+// 华为运动健康在 Android 上读 M4A 的 TITLE/ARTIST 走的是系统
+// MediaMetadataRetriever，底层解析的就是这套 ilst 原子。字段名固定为
+// `©nam` / `©ART`（注意 © 是 0xA9，不是 ASCII 的 C 或 a），每个 data
+// fullbox 的 flags=1 表示 UTF-8 文本。中文歌名 / UP 主名可直接写入。
+
+/// 构造 `meta` 盒（含 hdlr + ilst）。没有任何可用字段时返回 null，
+/// 避免在文件里塞一个空的 ilst。
+Uint8List? _buildIlst({String? title, String? artist}) {
+  final items = <Uint8List>[
+    if (title != null && title.trim().isNotEmpty)
+      _ilstText('\xA9nam', title.trim()),
+    if (artist != null && artist.trim().isNotEmpty)
+      _ilstText('\xA9ART', artist.trim()),
+  ];
+  if (items.isEmpty) return null;
+
+  // hdlr 声明这是 iTunes 元数据；handler_type='mdir'，name='appl'。
+  final hdlr = _fullBox('hdlr', 0, 0, <int>[
+    0, 0, 0, 0, // pre_defined
+    ..._ascii('mdir'),
+    0, 0, 0, 0, // reserved
+    0, 0, 0, 0, // reserved
+    0, 0, 0, 0, // reserved
+    ..._ascii('appl'),
+    0, // name 以 0 结尾
+  ]);
+
+  // meta 是 fullbox；data 是 fullbox，flags=1 表示 UTF-8。
+  return _fullBox('meta', 0, 0, <int>[
+    ...hdlr,
+    ..._box('ilst', items),
+  ]);
+}
+
+Uint8List _ilstText(String fourCc, String value) {
+  final data = _fullBox('data', 0, 1, <int>[
+    0, 0, 0, 0, // locale: 未指定
+    ...utf8.encode(value),
+  ]);
+  return _box(fourCc, <Uint8List>[data]);
 }
 
 Uint8List _buildStts(List<int> durations) {

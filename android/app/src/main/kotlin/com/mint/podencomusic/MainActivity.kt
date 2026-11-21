@@ -42,6 +42,8 @@ class MainActivity : AudioServiceActivity() {
         val sourcePath: String,
         val fileName: String,
         val mimeType: String,
+        val title: String?,
+        val artist: String?,
         val result: MethodChannel.Result,
     )
 
@@ -104,6 +106,8 @@ class MainActivity : AudioServiceActivity() {
         val sourcePath = call.argument<String>("path")
         val fileName = call.argument<String>("fileName")
         val mimeType = call.argument<String>("mimeType") ?: "audio/mpeg"
+        val title = call.argument<String>("title")
+        val artist = call.argument<String>("artist")
 
         if (sourcePath.isNullOrEmpty() || fileName.isNullOrEmpty()) {
             result.error("bad_args", "path 和 fileName 不能为空", null)
@@ -114,7 +118,7 @@ class MainActivity : AudioServiceActivity() {
             return
         }
 
-        val job = PendingSave(sourcePath, fileName, mimeType, result)
+        val job = PendingSave(sourcePath, fileName, mimeType, title, artist, result)
 
         // Android 10 起，往 MediaStore 插入自己的媒体条目不需要权限
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q || hasStoragePermission()) {
@@ -160,7 +164,9 @@ class MainActivity : AudioServiceActivity() {
     private fun runSave(job: PendingSave) {
         try {
             val location = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                saveWithMediaStore(job.sourcePath, job.fileName, job.mimeType)
+                saveWithMediaStore(
+                    job.sourcePath, job.fileName, job.mimeType, job.title, job.artist
+                )
             } else {
                 saveWithFile(job.sourcePath, job.fileName)
             }
@@ -179,6 +185,8 @@ class MainActivity : AudioServiceActivity() {
         sourcePath: String,
         fileName: String,
         mimeType: String,
+        title: String? = null,
+        artist: String? = null,
     ): String {
         val collection = MediaStore.Audio.Media.getContentUri(
             MediaStore.VOLUME_EXTERNAL_PRIMARY,
@@ -207,6 +215,10 @@ class MainActivity : AudioServiceActivity() {
             put(MediaStore.Audio.Media.DISPLAY_NAME, fileName)
             put(MediaStore.Audio.Media.MIME_TYPE, mimeType)
             put(MediaStore.Audio.Media.RELATIVE_PATH, relativePath)
+            // 华为运动健康等第三方 App 多半直接读 MediaStore 列，
+            // 不解析文件里的 ilst。两处都写，避免艺人显示成 Unknown。
+            if (!title.isNullOrEmpty()) put(MediaStore.Audio.Media.TITLE, title)
+            if (!artist.isNullOrEmpty()) put(MediaStore.Audio.Media.ARTIST, artist)
             put(MediaStore.Audio.Media.IS_PENDING, 1)
         }
 

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -181,5 +182,42 @@ void main() {
     final once = remuxFragmentedMp4(input);
     final twice = remuxFragmentedMp4(once);
     expect(twice, same(once));
+  });
+
+  test('title/artist 写成 udta/meta/ilst 的 ©nam / ©ART', () {
+    final output = remuxFragmentedMp4(
+      buildFixture(),
+      title: '测试曲名',
+      artist: '某UP主',
+    );
+
+    final moov = find(boxes(output), 'moov');
+    final moovBoxes = boxes(output, moov.payload, moov.end);
+    final udta = find(moovBoxes, 'udta');
+    final meta = find(boxes(output, udta.payload, udta.end), 'meta');
+    final metaBoxes = boxes(output, meta.payload, meta.end);
+    final ilst = find(metaBoxes, 'ilst');
+
+    // ilst 里的每个 item 是 4 字节 atom id + data 盒；data 的 payload 前 4 字节
+    // 是 fullbox 头（version+flags），flags=1 表示 UTF-8。
+    final items = boxes(output, ilst.payload, ilst.end);
+    expect(items.map((b) => b.type), containsAll(<String>['©nam', '©ART']));
+
+    String atomValue(TestBox item) {
+      final data = boxes(output, item.start + 4, item.end).single;
+      return utf8.decode(output.sublist(data.payload + 4, data.end));
+    }
+
+    expect(atomValue(items.firstWhere((b) => b.type == '©nam')), '测试曲名');
+    expect(atomValue(items.firstWhere((b) => b.type == '©ART')), '某UP主');
+  });
+
+  test('没有 title/artist 时不写 udta', () {
+    final output = remuxFragmentedMp4(buildFixture());
+    final moov = find(boxes(output), 'moov');
+    expect(
+      boxes(output, moov.payload, moov.end).map((b) => b.type),
+      isNot(contains('udta')),
+    );
   });
 }
