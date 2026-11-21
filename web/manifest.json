@@ -5,7 +5,7 @@
     "display": "standalone",
     "background_color": "#FDFAF4",
     "theme_color": "#E8B33C",
-    "description": "塞壬唱片与B站音乐播放器，支持歌词和下载",
+    "description": "一个已知或未知的世界，在此播放。塞壬唱片与B站的曲目、歌词与弹幕。",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
