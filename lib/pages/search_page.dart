@@ -62,6 +62,15 @@ class _SearchPageState extends State<SearchPage> {
   int _biliSeq = 0;
   Timer? _debounce;
 
+  // ── B站结果分页 ──
+  // 搜索接口一页只给 20 条，往下翻靠 page 参数。不传 page_size：
+  // B站经常直接忽略它，用「本页不满 20 条」判断到底更可靠。
+  static const _biliPageSize = 20;
+  int _biliPage = 1;
+  bool _biliHasMore = false;
+  bool _biliLoadingMore = false;
+  String? _biliMoreError;
+
   Future<void> _prepare() async {
     // 两个请求同时发出去，再一起等 —— 比一个一个 awaits 快一倍
     final albums = library.ensureAlbums();
@@ -85,7 +94,8 @@ class _SearchPageState extends State<SearchPage> {
 
   /// 当前来源要不要打 B站接口
   bool get _wantsBili =>
-      biliModel.enabled && (_source == _Source.all ||
+      biliModel.enabled &&
+      (_source == _Source.all ||
           _source == _Source.bili ||
           _source == _Source.up);
 
@@ -104,6 +114,10 @@ class _SearchPageState extends State<SearchPage> {
         _ups = const [];
         _biliLoading = false;
         _biliError = null;
+        _biliPage = 1;
+        _biliHasMore = false;
+        _biliLoadingMore = false;
+        _biliMoreError = null;
       });
       return;
     }
@@ -124,7 +138,8 @@ class _SearchPageState extends State<SearchPage> {
     if (kIsWeb && !BiliApi.proxyEnabled) {
       setState(() {
         _biliLoading = false;
-        _biliError = '网页端的检索须经「接口反代」中转。'
+        _biliError =
+            '网页端的检索须经「接口反代」中转。'
             '地址可在 设置 → 哔哩哔哩数据源 → 接口反代 中修改。';
       });
       return;
@@ -134,6 +149,10 @@ class _SearchPageState extends State<SearchPage> {
     setState(() {
       _biliLoading = true;
       _biliError = null;
+      _biliPage = 1;
+      _biliHasMore = false;
+      _biliLoadingMore = false;
+      _biliMoreError = null;
     });
 
     try {
@@ -160,6 +179,8 @@ class _SearchPageState extends State<SearchPage> {
         _videos = videos;
         _ups = ups;
         _biliLoading = false;
+        // UP 主不做翻页：一屏就够看，翻下去也还是那几个人。
+        _biliHasMore = _source != _Source.up && videos.length >= _biliPageSize;
       });
     } catch (e) {
       if (!mounted || seq != _biliSeq) return;
@@ -168,6 +189,50 @@ class _SearchPageState extends State<SearchPage> {
         _biliLoading = false;
       });
     }
+  }
+
+  /// 取下一页 B站视频，追加到现有结果末尾。
+  ///
+  /// 这里不递增 _biliSeq：翻页失败不该把已经显示的结果作废。只有搜索词
+  /// 或来源变了（那一瞬间 seq 会变）时，回来的数据才该被丢掉。
+  Future<void> _loadMoreBili() async {
+    if (_biliLoading || _biliLoadingMore || !_biliHasMore) return;
+    if (_biliMoreError != null) return;
+
+    final query = _query;
+    if (query.isEmpty || !_wantsBili || _source == _Source.up) return;
+
+    final seq = _biliSeq;
+    final nextPage = _biliPage + 1;
+    setState(() => _biliLoadingMore = true);
+
+    try {
+      final batch = await BiliApi.searchVideos(query, page: nextPage);
+      if (!mounted || seq != _biliSeq) return;
+
+      // 翻页之间 B站结果会漂移，同一支视频可能重复出现
+      final seen = _videos.map((v) => v.bvid).toSet();
+      final fresh = batch.where((v) => seen.add(v.bvid)).toList();
+
+      setState(() {
+        _biliPage = nextPage;
+        _videos = [..._videos, ...fresh];
+        // 满一页才说明后面可能还有
+        _biliHasMore = batch.length >= _biliPageSize;
+        _biliLoadingMore = false;
+      });
+    } catch (e) {
+      if (!mounted || seq != _biliSeq) return;
+      setState(() {
+        _biliLoadingMore = false;
+        _biliMoreError = e is BiliException ? e.message : '加载更多失败：$e';
+      });
+    }
+  }
+
+  void _retryMoreBili() {
+    setState(() => _biliMoreError = null);
+    unawaited(_loadMoreBili());
   }
 
   void _setSource(_Source source) {
@@ -246,6 +311,11 @@ class _SearchPageState extends State<SearchPage> {
                       biliLoading: _biliLoading,
                       biliError: _biliError,
                       onRetryBili: _runBiliSearch,
+                      biliHasMore: _biliHasMore,
+                      biliLoadingMore: _biliLoadingMore,
+                      biliMoreError: _biliMoreError,
+                      onLoadMoreBili: _loadMoreBili,
+                      onRetryMoreBili: _retryMoreBili,
                     );
                   },
                 ),
@@ -293,9 +363,7 @@ class _SearchPageState extends State<SearchPage> {
               ),
               onPressed: () {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('未登录也能搜，但登录后能少踩一些风控。去设置页登录'),
-                  ),
+                  const SnackBar(content: Text('未登录也能搜，但登录后能少踩一些风控。去设置页登录')),
                 );
               },
             ),
@@ -322,6 +390,11 @@ class _Results extends StatelessWidget {
     required this.biliLoading,
     required this.biliError,
     required this.onRetryBili,
+    required this.biliHasMore,
+    required this.biliLoadingMore,
+    required this.biliMoreError,
+    required this.onLoadMoreBili,
+    required this.onRetryMoreBili,
   });
 
   final String query;
@@ -333,15 +406,26 @@ class _Results extends StatelessWidget {
   final String? biliError;
   final Future<void> Function() onRetryBili;
 
+  /// 视频结果后面是否还有下一页
+  final bool biliHasMore;
+
+  /// 正在取下一页
+  final bool biliLoadingMore;
+
+  /// 翻页失败的原因（不影响已显示的结果）
+  final String? biliMoreError;
+
+  final Future<void> Function() onLoadMoreBili;
+  final VoidCallback onRetryMoreBili;
+
   @override
   Widget build(BuildContext context) {
     if (query.isEmpty) {
       return Center(
         child: Text(
           '输入检索关键词，开始搜索档案',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
+          style: Theme.of(context).textTheme.bodyMedium
+              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
         ),
       );
     }
@@ -358,8 +442,13 @@ class _Results extends StatelessWidget {
     final tracks = wantsSiren
         ? library.songs.where((track) {
             if (track.name.toLowerCase().contains(q)) return true;
-            if (track.artists.any((a) => a.toLowerCase().contains(q))) return true;
-            return library.albumNameOf(track.albumCid).toLowerCase().contains(q);
+            if (track.artists.any((a) => a.toLowerCase().contains(q))) {
+              return true;
+            }
+            return library
+                .albumNameOf(track.albumCid)
+                .toLowerCase()
+                .contains(q);
           }).toList()
         : <Track>[];
 
@@ -395,232 +484,305 @@ class _Results extends StatelessWidget {
       if (ups.isNotEmpty) _SectionTitle('B站UP主 · ${ups.length}'),
       ...ups,
       if (biliLoading) const _LoadingRow(),
-      if (biliError != null) _ErrorRow(message: biliError!, onRetry: onRetryBili),
+      if (biliError != null)
+        _ErrorRow(message: biliError!, onRetry: onRetryBili),
+      // 视频翻页状态占一行：还有下一页 / 正在取 / 取失败了
+      if (videos.isNotEmpty &&
+          (biliHasMore || biliLoadingMore || biliMoreError != null))
+        _MoreRow(
+          loading: biliLoadingMore,
+          error: biliMoreError,
+          onLoadMore: onLoadMoreBili,
+          onRetry: onRetryMoreBili,
+        ),
     ];
 
     if (entries.isEmpty) {
       return const SizedBox.shrink();
     }
 
-    return ListView.builder(
-      itemCount: entries.length,
-      itemBuilder: (context, index) {
-        final entry = entries[index];
-
-        if (entry is _SectionTitle) {
-          return Padding(
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-            child: Text(
-              entry.text,
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: Theme.of(context).colorScheme.primary,
-              ),
-            ),
-          );
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        // 快到底时自动取下一页：离底部不足 240 像素就触发，
+        // 用户基本感觉不到等待。_loadMoreBili 内部有重入保护。
+        if (biliHasMore &&
+            !biliLoadingMore &&
+            biliMoreError == null &&
+            notification.metrics.extentAfter < 240) {
+          unawaited(onLoadMoreBili());
         }
+        return false;
+      },
+      child: ListView.builder(
+        itemCount: entries.length,
+        itemBuilder: (context, index) {
+          final entry = entries[index];
 
-        if (entry is _LoadingRow) {
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 20),
-            child: Center(
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
+          if (entry is _SectionTitle) {
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+              child: Text(
+                entry.text,
+                style: Theme.of(context).textTheme.labelLarge
+                    ?.copyWith(color: Theme.of(context).colorScheme.primary),
               ),
-            ),
-          );
-        }
+            );
+          }
 
-        if (entry is _ErrorRow) {
-          return Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    entry.message,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                      fontSize: 13,
+          if (entry is _LoadingRow) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            );
+          }
+
+          if (entry is _ErrorRow) {
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      entry.message,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                        fontSize: 13,
+                      ),
                     ),
                   ),
-                ),
-                TextButton(
-                  onPressed: () => unawaited(entry.onRetry()),
-                  child: const Text('重新检索'),
-                ),
-              ],
-            ),
-          );
-        }
+                  TextButton(
+                    onPressed: () => unawaited(entry.onRetry()),
+                    child: const Text('重新检索'),
+                  ),
+                ],
+              ),
+            );
+          }
 
-        if (entry is Album) {
+          if (entry is _MoreRow) {
+            if (entry.loading) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 20),
+                child: Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              );
+            }
+            if (entry.error != null) {
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        entry.error!,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: entry.onRetry,
+                      child: const Text('重试'),
+                    ),
+                  ],
+                ),
+              );
+            }
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Center(
+                child: TextButton(
+                  onPressed: () => unawaited(entry.onLoadMore()),
+                  child: const Text('加载更多'),
+                ),
+              ),
+            );
+          }
+
+          if (entry is Album) {
+            return ListTile(
+              leading: SizedBox(
+                width: 48,
+                height: 48,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: CoverImage(url: entry.coverUrl),
+                ),
+              ),
+              title: Text(
+                entry.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: Text(
+                entry.artistes.join(' / '),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 搜索结果里就能整张加入歌单，不用先点进去。
+                  // 曲目要现拉详情接口，所以点下去会有一两秒等待
+                  IconButton(
+                    onPressed: () => _addAlbumToPlaylist(context, entry),
+                    icon: const Icon(Icons.playlist_add),
+                    tooltip: '整张加入歌单',
+                  ),
+                  FavoriteButton(
+                    item: favoriteOfAlbum(entry),
+                    showToast: false,
+                  ),
+                ],
+              ),
+              onTap: () {
+                // 不收键盘的话，返回本页时键盘会自己再弹出来
+                FocusManager.instance.primaryFocus?.unfocus();
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => AlbumPage(album: entry),
+                  ),
+                );
+              },
+            );
+          }
+
+          if (entry is BiliVideo) {
+            // 点 B站视频，队列就是这批 B站结果，可以连着听
+            final startIndex = videos.indexOf(entry);
+            return BiliVideoTile(
+              video: entry,
+              onTap: () {
+                FocusManager.instance.primaryFocus?.unfocus();
+                playerModel.playQueue(
+                  videos.map((video) => video.toTrack()).toList(),
+                  start: startIndex,
+                );
+              },
+              onWatch: () {
+                FocusManager.instance.primaryFocus?.unfocus();
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => BiliVideoPage(
+                      bvid: entry.bvid,
+                      title: entry.title,
+                      cover: entry.cover,
+                    ),
+                  ),
+                );
+              },
+              onAddToPlaylist: () =>
+                  showAddToPlaylistSheet(context, [entry.toTrack()]),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DownloadButton(track: entry.toTrack(), iconSize: 20),
+                  FavoriteButton(
+                    item: favoriteOfVideo(entry),
+                    showToast: false,
+                  ),
+                ],
+              ),
+            );
+          }
+
+          if (entry is BiliUp) {
+            return ListTile(
+              leading: ClipOval(
+                child: SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: CoverImage(url: entry.face),
+                ),
+              ),
+              title: Text(
+                entry.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: Text(
+                entry.subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              trailing: FavoriteButton(
+                item: favoriteOfUp(entry),
+                showToast: false,
+              ),
+              onTap: () {
+                FocusManager.instance.primaryFocus?.unfocus();
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => UpPage(up: entry)),
+                );
+              },
+            );
+          }
+
+          final track = entry as Track;
+          // 点搜索结果里的歌，队列就是这批搜索结果，方便连续听
+          final startIndex = tracks.indexOf(track);
+
           return ListTile(
             leading: SizedBox(
               width: 48,
               height: 48,
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(4),
-                child: CoverImage(url: entry.coverUrl),
+                child: CoverImage(url: library.coverOfTrack(track)),
               ),
             ),
             title: Text(
-              entry.name,
+              track.name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
             subtitle: Text(
-              entry.artistes.join(' / '),
+              [
+                library.albumNameOf(track.albumCid),
+                if (track.artists.isNotEmpty) track.artists.join(' / '),
+              ].where((s) => s.isNotEmpty).join(' · '),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
+            onTap: () {
+              // 键盘不收的话，bottomNavigationBar 槽位上刚出现的迷你条会被它盖住
+              FocusManager.instance.primaryFocus?.unfocus();
+              playerModel.playQueue(tracks, start: startIndex);
+            },
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // 搜索结果里就能整张加入歌单，不用先点进去。
-                // 曲目要现拉详情接口，所以点下去会有一两秒等待
                 IconButton(
-                  onPressed: () => _addAlbumToPlaylist(context, entry),
+                  onPressed: () => showAddToPlaylistSheet(context, [track]),
                   icon: const Icon(Icons.playlist_add),
-                  tooltip: '整张加入歌单',
+                  tooltip: '加入歌单',
                 ),
                 FavoriteButton(
-                  item: favoriteOfAlbum(entry),
-                  showToast: false,
-                ),
-              ],
-            ),
-            onTap: () {
-              // 不收键盘的话，返回本页时键盘会自己再弹出来
-              FocusManager.instance.primaryFocus?.unfocus();
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => AlbumPage(album: entry),
-                ),
-              );
-            },
-          );
-        }
-
-        if (entry is BiliVideo) {
-          // 点 B站视频，队列就是这批 B站结果，可以连着听
-          final startIndex = videos.indexOf(entry);
-          return BiliVideoTile(
-            video: entry,
-            onTap: () {
-              FocusManager.instance.primaryFocus?.unfocus();
-              playerModel.playQueue(
-                videos.map((video) => video.toTrack()).toList(),
-                start: startIndex,
-              );
-            },
-            onWatch: () {
-              FocusManager.instance.primaryFocus?.unfocus();
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => BiliVideoPage(
-                    bvid: entry.bvid,
-                    title: entry.title,
-                    cover: entry.cover,
+                  item: favoriteOfTrack(
+                    track,
+                    coverUrl: library.coverOfTrack(track),
+                    albumName: library.albumNameOf(track.albumCid),
                   ),
-                ),
-              );
-            },
-            onAddToPlaylist: () =>
-                showAddToPlaylistSheet(context, [entry.toTrack()]),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                DownloadButton(track: entry.toTrack(), iconSize: 20),
-                FavoriteButton(
-                  item: favoriteOfVideo(entry),
                   showToast: false,
                 ),
               ],
             ),
+            onLongPress: () => showAddToPlaylistSheet(context, [track]),
           );
-        }
-
-        if (entry is BiliUp) {
-          return ListTile(
-            leading: ClipOval(
-              child: SizedBox(
-                width: 48,
-                height: 48,
-                child: CoverImage(url: entry.face),
-              ),
-            ),
-            title: Text(
-              entry.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            subtitle: Text(
-              entry.subtitle,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            trailing: FavoriteButton(item: favoriteOfUp(entry), showToast: false),
-            onTap: () {
-              FocusManager.instance.primaryFocus?.unfocus();
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => UpPage(up: entry),
-                ),
-              );
-            },
-          );
-        }
-
-        final track = entry as Track;
-        // 点搜索结果里的歌，队列就是这批搜索结果，方便连续听
-        final startIndex = tracks.indexOf(track);
-
-        return ListTile(
-          leading: SizedBox(
-            width: 48,
-            height: 48,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: CoverImage(url: library.coverOfTrack(track)),
-            ),
-          ),
-          title: Text(track.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-          subtitle: Text(
-            [
-              library.albumNameOf(track.albumCid),
-              if (track.artists.isNotEmpty) track.artists.join(' / '),
-            ].where((s) => s.isNotEmpty).join(' · '),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          onTap: () {
-            // 键盘不收的话，bottomNavigationBar 槽位上刚出现的迷你条会被它盖住
-            FocusManager.instance.primaryFocus?.unfocus();
-            playerModel.playQueue(tracks, start: startIndex);
-          },
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                onPressed: () => showAddToPlaylistSheet(context, [track]),
-                icon: const Icon(Icons.playlist_add),
-                tooltip: '加入歌单',
-              ),
-              FavoriteButton(
-                item: favoriteOfTrack(
-                  track,
-                  coverUrl: library.coverOfTrack(track),
-                  albumName: library.albumNameOf(track.albumCid),
-                ),
-                showToast: false,
-              ),
-            ],
-          ),
-          onLongPress: () => showAddToPlaylistSheet(context, [track]),
-        );
-      },
+        },
+      ),
     );
   }
 }
@@ -640,6 +802,21 @@ class _ErrorRow {
   const _ErrorRow({required this.message, required this.onRetry});
   final String message;
   final Future<void> Function() onRetry;
+}
+
+/// B站视频分页的状态行：还在取、取失败、或「加载更多」。
+class _MoreRow {
+  const _MoreRow({
+    required this.loading,
+    required this.error,
+    required this.onLoadMore,
+    required this.onRetry,
+  });
+
+  final bool loading;
+  final String? error;
+  final Future<void> Function() onLoadMore;
+  final VoidCallback onRetry;
 }
 
 /// 搜索结果里「整张专辑加入歌单」。
