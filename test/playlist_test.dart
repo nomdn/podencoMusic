@@ -3,6 +3,7 @@
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:podenco_music/models.dart';
+import 'package:podenco_music/playlist_import.dart';
 import 'package:podenco_music/playlist_model.dart';
 import 'package:podenco_music/storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -58,6 +59,32 @@ void main() {
       expect(loaded, isEmpty);
     });
 
+    test('自定义封面链接跟着存档往返', () async {
+      const playlists = [
+        Playlist(
+          id: '1000',
+          name: '有封面',
+          createdAt: 1720000000000,
+          tracks: [],
+          coverUrl: 'https://example.com/cover.jpg',
+        ),
+      ];
+
+      await PlaylistStorage.save(playlists);
+      final loaded = await PlaylistStorage.load();
+
+      expect(loaded.single.coverUrl, 'https://example.com/cover.jpg');
+    });
+
+    test('旧存档没有封面字段，读成空串走默认封面', () async {
+      SharedPreferences.setMockInitialValues({
+        'playlists_v1': '{"playlists":[{"id":"1","name":"老歌单","tracks":[]}]}',
+      });
+      final loaded = await PlaylistStorage.load();
+
+      expect(loaded.single.coverUrl, '');
+    });
+
     test('存档里某一条格式不对，剩下的照常读回来', () async {
       SharedPreferences.setMockInitialValues({
         'playlists_v1':
@@ -83,6 +110,8 @@ void main() {
       expect(model.playlists.first.name, '通勤');
       expect(model.playlists.last.id, older.id);
       expect(model.playlists.last.name, '收藏');
+      // 同一微秒连建两个也不能撞 id，否则后一个会接走前一个的操作
+      expect(newer.id, isNot(older.id));
     });
 
     test('addTrack 按 cid 去重', () {
@@ -166,6 +195,93 @@ void main() {
     test('byId 查不到时返回 null，不是抛异常', () {
       final model = PlaylistModel();
       expect(model.byId('不存在'), isNull);
+    });
+
+    test('merge 按 cid 去重，源歌单保留不动', () {
+      final model = PlaylistModel();
+      final first = model.create('A');
+      final second = model.create('B');
+      const one = Track(cid: '1', name: 'ONE', albumCid: 'x', artists: []);
+      const two = Track(cid: '2', name: 'TWO', albumCid: 'x', artists: []);
+
+      model.addTrack(first.id, one);
+      model.addTrack(second.id, one); // 两歌单都收了这首
+      model.addTrack(second.id, two);
+
+      final merged = model.merge([first.id, second.id], '合并歌单');
+
+      expect(merged, isNotNull);
+      expect(merged!.name, '合并歌单');
+      expect(merged.tracks.map((track) => track.cid), ['1', '2']);
+      expect(model.byId(first.id)!.tracks.length, 1);
+      expect(model.byId(second.id)!.tracks.length, 2);
+      expect(model.playlists.first.id, merged.id);
+    });
+
+    test('merge 少于两个有效歌单返回 null', () {
+      final model = PlaylistModel();
+      final first = model.create('A');
+      model.create('B');
+
+      expect(model.merge([first.id], '合并歌单'), isNull);
+      expect(model.merge([first.id, '不存在'], '合并歌单'), isNull);
+      expect(model.merge(['不存在', '也没有'], '合并歌单'), isNull);
+    });
+
+    test('merge 撞名自动加序号', () {
+      final model = PlaylistModel();
+      final first = model.create('A');
+      final second = model.create('B');
+      model.create('合并歌单');
+
+      final merged = model.merge([first.id, second.id], '合并歌单');
+      expect(merged!.name, '合并歌单 (2)');
+    });
+
+    test('setCover 设置、去空格、恢复默认', () {
+      final model = PlaylistModel();
+      final playlist = model.create('A');
+
+      model.setCover(playlist.id, '  https://example.com/c.jpg  ');
+      expect(model.byId(playlist.id)!.coverUrl, 'https://example.com/c.jpg');
+
+      // 内容没变不该造新对象（监听方不用白重建）
+      final withCover = model.byId(playlist.id);
+      model.setCover(playlist.id, 'https://example.com/c.jpg');
+      expect(identical(model.byId(playlist.id), withCover), isTrue);
+
+      model.setCover(playlist.id, '');
+      expect(model.byId(playlist.id)!.coverUrl, '');
+    });
+
+    test('备份 JSON 里的封面链接能导入回来', () {
+      final parsed = parsePlaylistJson(
+        '{"app":"Podenco Music","playlist":{"name":"备份",'
+        '"coverUrl":"https://example.com/c.jpg",'
+        '"tracks":[{"cid":"1","name":"歌"}]}}',
+      );
+      expect(parsed.single.coverUrl, 'https://example.com/c.jpg');
+
+      final model = PlaylistModel();
+      final imported = model.importPlaylist(
+        parsed.single.name,
+        parsed.single.tracks,
+        coverUrl: parsed.single.coverUrl,
+      );
+      expect(model.byId(imported.id)!.coverUrl, 'https://example.com/c.jpg');
+    });
+
+    test('copyWith 不传封面时保留，传空串时清空', () {
+      const playlist = Playlist(
+        id: '1',
+        name: 'A',
+        createdAt: 0,
+        tracks: [],
+        coverUrl: 'https://example.com/c.jpg',
+      );
+
+      expect(playlist.copyWith(name: 'B').coverUrl, playlist.coverUrl);
+      expect(playlist.copyWith(coverUrl: '').coverUrl, '');
     });
   });
 }

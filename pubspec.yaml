@@ -53,6 +53,9 @@ dependencies:
   # 窗口行为：点 X 隐藏到托盘继续播，退出走托盘菜单
   window_manager: 0.5.1
   file_selector: ^1.1.0
+  # 本地选的专辑图片压到 320px / JPEG 后再转 base64 存档，
+  # 纯 Dart 实现，全平台通用，不引原生插件
+  image: ^4.13.1
   crypto: ^3.0.8
   qr_flutter: ^4.1.0
   # Web 端的视频播放在 video_player（HTMLVideoElement）上，

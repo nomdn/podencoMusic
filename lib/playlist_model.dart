@@ -51,7 +51,9 @@ class PlaylistModel extends ChangeNotifier {
   Playlist create(String name) {
     final clean = name.trim();
     final playlist = Playlist(
-      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      // 加当前数量兜底：同一微秒连建两个不会撞 id，否则后一个会把前一个
+      // 的操作全接走（byId 按字符串查，命中排在最前的那个）
+      id: '${DateTime.now().microsecondsSinceEpoch}-${_playlists.length}',
       name: clean.isEmpty ? '未命名歌单' : clean,
       createdAt: DateTime.now().millisecondsSinceEpoch,
       tracks: const [],
@@ -66,10 +68,50 @@ class PlaylistModel extends ChangeNotifier {
   /// 哪个「更该留」没有客观答案，让用户自己删多余的那个更安全。
   ///
   /// 名字撞了自动加序号（「我的歌单 (2)」），因为界面上靠名字认歌单。
-  Playlist importPlaylist(String name, List<Track> tracks) {
+  Playlist importPlaylist(
+    String name,
+    List<Track> tracks, {
+    String coverUrl = '',
+  }) {
     final base = name.trim().isEmpty ? '导入的歌单' : name.trim();
     final playlist = Playlist(
       // 加下标兜底：一批导入里两次调用可能落在同一微秒
+      id: '${DateTime.now().microsecondsSinceEpoch}-${_playlists.length}',
+      name: _uniqueName(base),
+      createdAt: DateTime.now().millisecondsSinceEpoch,
+      tracks: tracks,
+      // 备份里可能带自定义封面；老备份没这字段就是空串，走默认封面
+      coverUrl: coverUrl,
+    );
+    _playlists = [playlist, ..._playlists];
+    notifyListeners();
+    _persist();
+    return playlist;
+  }
+
+  /// 把多个歌单合成一份新的。源歌单保留不动 —— 合并是不可逆的整理动作，
+  /// 先留住原件，用户确认结果没问题再自己删。
+  ///
+  /// 曲目按传入的歌单顺序拼接，按 cid 去重（同一个 cid 在不同歌单里
+  /// 可能是不同时间加进去的，留第一次出现的那份）。少于两个有效歌单
+  /// 就不用合并，返回 null 让调用方别弹成功提示。
+  Playlist? merge(List<String> ids, String name) {
+    final sources = ids
+        .map(byId)
+        .whereType<Playlist>()
+        .toList();
+    if (sources.length < 2) return null;
+
+    final seen = <String>{};
+    final tracks = <Track>[];
+    for (final source in sources) {
+      for (final track in source.tracks) {
+        if (seen.add(track.cid)) tracks.add(track);
+      }
+    }
+
+    final base = name.trim().isEmpty ? '合并歌单' : name.trim();
+    final playlist = Playlist(
       id: '${DateTime.now().microsecondsSinceEpoch}-${_playlists.length}',
       name: _uniqueName(base),
       createdAt: DateTime.now().millisecondsSinceEpoch,
@@ -79,6 +121,15 @@ class PlaylistModel extends ChangeNotifier {
     notifyListeners();
     _persist();
     return playlist;
+  }
+
+  /// 换封面。传空串 = 恢复默认的「第一首歌专辑封面」。
+  void setCover(String id, String url) {
+    final playlist = byId(id);
+    final clean = url.trim();
+    // 内容没变就别写盘了，封面对话框里点确定不会白动一次存档
+    if (playlist == null || playlist.coverUrl == clean) return;
+    _replace(id, (p) => p.copyWith(coverUrl: clean));
   }
 
   /// 首个空位名字。上限只是防止极端情况下死循环。

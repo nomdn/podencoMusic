@@ -69,6 +69,7 @@ class NativeVideoPlayback implements VideoPlayback {
   int _width = 0;
   int _height = 0;
   bool _hasAudio = false;
+  double _speed = 1.0;
 
   @override
   ValueListenable<VideoSnapshot> get state => _notifier;
@@ -94,7 +95,7 @@ class NativeVideoPlayback implements VideoPlayback {
     _hasAudio = source.audioUrl != null;
     _width = 0;
     _height = 0;
-    _emit(const VideoSnapshot());
+    _emit(VideoSnapshot(speed: _speed));
 
     await _player.setVolume(source.volume.clamp(0.0, 1.0) * 100);
     await _player.setPlaylistMode(
@@ -120,6 +121,9 @@ class NativeVideoPlayback implements VideoPlayback {
         throw const VideoPlaybackException('DASH 音轨没能挂上，改用合并流');
       }
     }
+    // loadfile 可能把 speed 重置成 1，切清晰度后重新应用用户选的倍速。
+    await _player.setRate(_speed);
+    _emit(_snapshot.copyWith(speed: _speed));
   }
 
   /// 等主文件真正加载出参数。`open()` 只是把 loadfile 发出去，mpv 还在
@@ -195,6 +199,19 @@ class NativeVideoPlayback implements VideoPlayback {
 
   @override
   Future<void> seek(Duration position) => _player.seek(position);
+
+  @override
+  double get speed => _speed;
+
+  @override
+  Future<void> setSpeed(double speed) async {
+    final next = normalizeVideoSpeed(speed);
+    _speed = next;
+    await _player.setRate(next);
+    // 倍速一变，上次上报的位置已经是过去时：用真值重新打时间戳，
+    // 弹幕插值才不会沿用旧倍速多飘一段。
+    _emit(_snapshot.copyWith(position: _player.state.position, speed: next));
+  }
 
   @override
   Future<void> dispose() async {

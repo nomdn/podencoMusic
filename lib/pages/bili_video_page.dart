@@ -538,6 +538,50 @@ class _ControlsState extends State<_Controls> {
                 _fmt(total),
                 style: const TextStyle(color: Colors.white70, fontSize: 12),
               ),
+              const SizedBox(width: 4),
+              PopupMenuButton<double>(
+                tooltip: '倍速',
+                initialValue: value.speed,
+                onSelected: (speed) =>
+                    unawaited(widget.playback.setSpeed(speed)),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.speed,
+                          size: 18, color: Colors.white70),
+                      const SizedBox(width: 3),
+                      Text(
+                        '${value.speed}x',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                itemBuilder: (_) => [
+                  for (final speed in videoSpeeds)
+                    PopupMenuItem<double>(
+                      value: speed,
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.check,
+                            size: 16,
+                            color: speed == value.speed
+                                ? Colors.white
+                                : Colors.transparent,
+                          ),
+                          const SizedBox(width: 8),
+                          Text('${speed}x'),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
             ],
           ),
         );

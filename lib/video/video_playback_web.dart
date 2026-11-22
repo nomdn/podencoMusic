@@ -22,6 +22,7 @@ class WebVideoPlayback implements VideoPlayback {
   Timer? _syncTimer;
   bool _syncSeekLogged = false;
   bool _disposed = false;
+  double _speed = 1.0;
 
   final ValueNotifier<VideoSnapshot> _notifier =
       ValueNotifier(const VideoSnapshot());
@@ -110,6 +111,8 @@ class WebVideoPlayback implements VideoPlayback {
       await _audio?.seekTo(target);
     }
 
+    // 换清晰度会重建 controller，倍速得重新设一遍；_speed 保留用户选择。
+    await setSpeed(_speed);
     _pull();
   }
 
@@ -125,6 +128,7 @@ class WebVideoPlayback implements VideoPlayback {
       position: value.position,
       duration: value.duration,
       size: value.size,
+      speed: _speed,
       capturedAt: DateTime.now(),
     );
   }
@@ -180,6 +184,25 @@ class WebVideoPlayback implements VideoPlayback {
   Future<void> seek(Duration position) async {
     await _video?.seekTo(position);
     await _audio?.seekTo(position);
+  }
+
+  @override
+  double get speed => _speed;
+
+  @override
+  Future<void> setSpeed(double speed) async {
+    final next = normalizeVideoSpeed(speed);
+    _speed = next;
+    // DASH 两个标签必须一起改，否则音画各走各的时钟，越播越偏。
+    await _video?.setPlaybackSpeed(next);
+    await _audio?.setPlaybackSpeed(next);
+    if (!_disposed) {
+      _notifier.value = _notifier.value.copyWith(
+        position: _video?.value.position ?? _notifier.value.position,
+        speed: next,
+        capturedAt: DateTime.now(),
+      );
+    }
   }
 
   Future<void> _teardown() async {

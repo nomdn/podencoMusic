@@ -92,7 +92,11 @@ class _ImportSheetState extends State<_ImportSheet> {
     final messenger = ScaffoldMessenger.of(context);
     var count = 0;
     for (final playlist in _parsed) {
-      playlistsModel.importPlaylist(playlist.name, playlist.tracks);
+      playlistsModel.importPlaylist(
+        playlist.name,
+        playlist.tracks,
+        coverUrl: playlist.coverUrl,
+      );
       count += playlist.tracks.length;
     }
 

@@ -8,10 +8,18 @@ import 'siren_api.dart';
 /// 还没有 id —— id 由 [PlaylistModel.importPlaylist] 生成，
 /// 导入永远是「新建一个」，不会覆盖本地已有歌单。
 class ImportedPlaylist {
-  const ImportedPlaylist({required this.name, required this.tracks, this.note});
+  const ImportedPlaylist({
+    required this.name,
+    required this.tracks,
+    this.coverUrl = '',
+    this.note,
+  });
 
   final String name;
   final List<Track> tracks;
+
+  /// 备份里带的自定义封面链接。老备份没有这个字段，读到空串走默认封面。
+  final String coverUrl;
 
   /// 解析时值得告诉用户的一句话（跳过了几首、名字是兜底之类）。
   /// 正常情况下是 null。
@@ -103,6 +111,7 @@ ImportedPlaylist? _toImported(Map<String, dynamic> map) {
   return ImportedPlaylist(
     name: name.isEmpty ? '导入的歌单' : name,
     tracks: tracks,
+    coverUrl: map['coverUrl'] as String? ?? '',
     note: rawTracks.length > tracks.length
         ? '跳过 ${rawTracks.length - tracks.length} 条无效或重复的曲目'
         : null,

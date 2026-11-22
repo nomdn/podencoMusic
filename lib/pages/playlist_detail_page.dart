@@ -6,8 +6,9 @@ import '../library.dart';
 import '../models.dart';
 import '../player_model.dart';
 import '../playlist_model.dart';
-import '../widgets/cover_image.dart';
 import '../widgets/mini_player.dart';
+import '../widgets/playlist_cover.dart';
+import '../widgets/playlist_cover_sheet.dart';
 import '../widgets/playlist_dialogs.dart';
 import '../widgets/playlist_export_sheet.dart';
 import 'downloads_page.dart';
@@ -60,11 +61,13 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
                 tooltip: '更多操作',
                 onSelected: (action) {
                   if (action == 'rename') _rename(playlist);
+                  if (action == 'cover') showPlaylistCoverSheet(context, playlist.id);
                   if (action == 'export') showPlaylistExportSheet(context, playlist);
                   if (action == 'delete') _delete(playlist);
                 },
                 itemBuilder: (context) => const [
                   PopupMenuItem(value: 'rename', child: Text('重命名')),
+                  PopupMenuItem(value: 'cover', child: Text('设置封面')),
                   PopupMenuItem(value: 'export', child: Text('导出备份')),
                   PopupMenuItem(value: 'delete', child: Text('删除')),
                 ],
@@ -137,31 +140,17 @@ class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final coverUrl = playlist.tracks.isEmpty
-        ? ''
-        : library.coverOfTrack(playlist.tracks.first);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: SizedBox(
-              width: 132,
-              height: 132,
-              child: coverUrl.isEmpty
-                  ? ColoredBox(
-                      color: theme.colorScheme.surfaceContainerHighest,
-                      child: Icon(
-                        Icons.library_music,
-                        size: 48,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    )
-                  : CoverImage(url: coverUrl),
-            ),
+          PlaylistCover(
+            playlist: playlist,
+            size: 132,
+            radius: 8,
+            onTap: () => showPlaylistCoverSheet(context, playlist.id),
           ),
           const SizedBox(width: 16),
           Expanded(

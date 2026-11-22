@@ -224,18 +224,10 @@ class BiliDanmakuOverlayState extends State<BiliDanmakuOverlay>
   ///
   /// 播放器的 position 是离散上报的（Web 上约 250ms 一次，libmpv 稍密一些），
   /// 而弹幕是每帧重绘的。直接读上报值，滚动弹幕就会「一秒跳几下」；
-  /// 这里用「上报值 + 距上报时刻流逝的时间」插值，上限 600ms ——
-  /// 缓冲、卡顿的时候最多多算半秒，不会被拖成越飘越远。
-  int get _clockPosMs {
-    final snapshot = widget.clock.value;
-    var ms = snapshot.position.inMilliseconds;
-    final captured = snapshot.capturedAt;
-    if (captured != null && snapshot.playing && !snapshot.buffering) {
-      final drift = DateTime.now().difference(captured).inMilliseconds;
-      if (drift > 0 && drift < 600) ms += drift;
-    }
-    return ms;
-  }
+  /// 这里用「上报值 + 距上报时刻流逝的时间 × 倍速」插值，上限 600ms ——
+  /// 缓冲、卡顿的时候最多多算半秒；倍速时弹幕与画面保持同一个时间轴。
+  int get _clockPosMs =>
+      interpolatedPositionMs(widget.clock.value, DateTime.now());
 
   /// 弹幕层瞬时快照。字段扁平，便于直接断言。
   Map<String, Object?> probeSnapshot() {

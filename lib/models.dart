@@ -244,6 +244,7 @@ class Playlist {
     required this.name,
     required this.createdAt,
     required this.tracks,
+    this.coverUrl = '',
   });
 
   /// 本地 id，创建时拿当前时间戳生成，不引 uuid 依赖。
@@ -251,6 +252,11 @@ class Playlist {
   final String name;
   final int createdAt;
   final List<Track> tracks;
+
+  /// 自定义封面链接。空串表示没设过，界面回退到第一首歌的专辑封面。
+  /// 只存链接不存图片：音频直链同理，图片落本地会在卸载/换设备时丢，
+  /// 链接跟着歌单 JSON 一起走，导出备份也能带过去。
+  final String coverUrl;
 
   factory Playlist.fromJson(Map<String, dynamic> json) => Playlist(
     id: json['id']?.toString() ?? '',
@@ -260,6 +266,8 @@ class Playlist {
         .whereType<Map<String, dynamic>>()
         .map(Track.fromJson)
         .toList(),
+    // 旧存档没有这个字段，读到空串走默认封面，不用迁移
+    coverUrl: json['coverUrl'] as String? ?? '',
   );
 
   Map<String, dynamic> toJson() => {
@@ -267,14 +275,18 @@ class Playlist {
     'name': name,
     'createdAt': createdAt,
     'tracks': tracks.map((track) => track.toJson()).toList(),
+    'coverUrl': coverUrl,
   };
 
-  /// 歌单增删曲目 / 改名后造一个新对象换掉旧的，
+  /// 歌单增删曲目 / 改名 / 换封面后造一个新对象换掉旧的，
   /// 监听方比较引用就能看出变没变。
-  Playlist copyWith({String? name, List<Track>? tracks}) => Playlist(
-    id: id,
-    name: name ?? this.name,
-    createdAt: createdAt,
-    tracks: tracks ?? this.tracks,
-  );
+  Playlist copyWith({String? name, List<Track>? tracks, String? coverUrl}) =>
+      Playlist(
+        id: id,
+        name: name ?? this.name,
+        createdAt: createdAt,
+        tracks: tracks ?? this.tracks,
+        // 传空串是「恢复默认」，传 null 才是「不改」
+        coverUrl: coverUrl ?? this.coverUrl,
+      );
 }
