@@ -4,6 +4,11 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。条目按版本倒序排列。
 
+## [1.2.1] - 2026-11-28
+
+### Fixed
+- 修复部分设备下载 WAV 后无法播放的问题。标签块（`LIST/INFO` 与小写 `id3 `）原先写在 `data` 之前，改为追加到 `data` 之后；音频数据本身不动，已逐字节比对一致。
+
 ## [1.2.0] - 2026-11-22
 
 ### Added

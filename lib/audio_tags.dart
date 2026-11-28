@@ -140,23 +140,29 @@ class _WavChunk {
 }
 
 /// WAV：重写整个 RIFF 容器 —— 扒掉原来所有的 `LIST/INFO` 与 `id3 ` 块，
-/// 再把新的两份标签插到 `data` 块**之前**，最后修正 RIFF 长度字段
+/// 再把新的两份标签**追加到 data 块之后**（文件尾），最后修正 RIFF 长度字段
 /// （偏移 4 的 LE DWORD = 文件总长 - 8）。
 ///
-/// 为什么插在 data 之前而不是追加到文件尾：不少解析器（含部分 Android
-/// 与嵌入式播放器）遍历 chunk 时读到 `data` 就认为元数据区结束，
-/// 不再往后扫。ffprobe 这类会走完整条块链，所以追加在尾部它们照样能读，
-/// 容易造成「本地验证通过、设备上读不到」的假象。放前面两种解析器都能命中。
+/// 为什么追加到 data 之后而不是插在前面：华为手表（经运动健康推送）对
+/// RIFF 的容错很差 —— 标签块一旦出现在 `data` 之前，它就直接判定
+/// 「无法播放文件」（音频字节本身一个没少，实测对比过）。把标签放到音频
+/// 数据之后，手表按标准 `fmt → data` 顺序解析，音频能正常播放。
+/// 代价是只扫到 data 就收手的解析器读不到标签，但设备本来也读不出来，
+/// 先保证能放。ffprobe / VLC 这类会走完整条块链的仍然能读到。
 ///
 /// 为什么是「重写」而不是「追加」：塞壬 CDN 上的 WAV 自带一个**空的**
-/// `LIST/INFO`（只有 4 字节 `INFO`，没有任何子块）。以前直接在文件尾追加
-/// 第二个 INFO，解析器按顺序读到第一个、发现是空的，就当这首歌没有标签 ——
-/// 于是设备永远显示未知。现在把旧的扒掉再写，全文件只留一份。
+/// `LIST/INFO`（只有 4 字节 `INFO`，没有任何子块）。若直接在文件尾追加
+/// 第二个 INFO，解析器按顺序读到第一个、发现是空的，就当这首歌没有标签。
+/// 现在把旧的扒掉再写，全文件只留一份。
 ///
 /// 为什么两份都写：WAV 没有统一的标签标准，不同播放器各读各的。
 ///   · `LIST/INFO`（INAM / IART / IPRD）是 RIFF 原生写法，Windows、
 ///     不少播放器与部分 Android 解析器认这个；
 ///   · `id3 ` 块是安卓系播放器的常见做法，和 MP3 那份 ID3v2.3 是同一批字节。
+///
+/// 块 ID 用小写 `id3 `、不要写 ID3v1 尾标签：实测大写 `ID3 ` 与尾部 128
+/// 字节的 ID3v1 都会让手表再次判成「无法播放」。INFO 文本保持 UTF-8，
+/// 改成 UTF-16LE 同样播不出来。
 Future<void> writeWavTags(File file, AudioTag tag) async {
   final total = await file.length();
   final chunks = <_WavChunk>[];
@@ -213,32 +219,25 @@ Future<void> writeWavTags(File file, AudioTag tag) async {
   if (tagBytes.length.isOdd) id3.add([0x00]);
   final id3Bytes = id3.toBytes();
 
-  // 第二遍：流式搬到临时文件，data 块整段过一遍但不进内存
+  // 第二遍：流式搬到临时文件，data 块整段过一遍但不进内存。
+  // 音频块按原样全部搬完，标签最后追加 —— 手表才肯播。
   final tmp = File('${file.path}.tagtmp');
   final sink = tmp.openWrite();
-  var inserted = false;
   try {
     sink.add(ascii.encode('RIFF'));
     sink.add(_le32(0)); // 长度字段占位，写完回填
     sink.add(ascii.encode('WAVE'));
     for (final c in kept) {
-      // 标签插在 data 之前：只扫到 data 就收手的解析器也能读到
-      if (!inserted && c.id == 'data') {
-        if (info != null) sink.add(info);
-        sink.add(id3Bytes);
-        inserted = true;
-      }
       await sink.addStream(file.openRead(c.start, c.start + c.total));
     }
     // 解析中断的位置之后原样搬过去，音频一个字节都不少
     if (tailStart >= 0 && tailStart < total) {
       await sink.addStream(file.openRead(tailStart, total));
     }
-    // 没有 data 块（文件异常或已被截断）时仍要把标签写进去
-    if (!inserted) {
-      if (info != null) sink.add(info);
-      sink.add(id3Bytes);
-    }
+    // 标签追加在文件尾（data 之后）。先 LIST/INFO 再 id3，顺序与实测
+    // 能播放的样本一致。空文件 / 无 data 块也一样写。
+    if (info != null) sink.add(info);
+    sink.add(id3Bytes);
     await sink.flush();
     await sink.close();
 
